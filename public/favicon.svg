@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Document outline -->
+  <path d="M8 4h10l6 6v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
+        fill="none" stroke="#fe8600" stroke-width="2"/>
+  <path d="M18 4v5a1 1 0 0 0 1 1h5"
+        fill="none" stroke="#fe8600" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- XML angle brackets with X -->
+  <g fill="#fe8600" font-family="monospace" font-weight="bold">
+    <text x="9" y="20" font-size="8">&lt;</text>
+    <text x="13" y="21" font-size="10">X</text>
+    <text x="20" y="20" font-size="8">&gt;</text>
+  </g>
+</svg>
