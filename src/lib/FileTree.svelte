@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import FileTreeNode from './FileTreeNode.svelte';
-  import { buildFileTree, nodeId } from './fileTree';
+  import { buildFileTree, nodeId, getFolderKeysForPath } from './fileTree';
   import type { FileEntry as FileEntryType } from './ooxml';
 
   export let entries: FileEntryType[] = [];
@@ -10,6 +10,7 @@
 
   let expandedKeys: string[] = [];
   let mounted = false;
+  let listEl: HTMLUListElement | null = null;
 
   const STORAGE_PREFIX = 'ooxml-expanded-keys-';
 
@@ -46,6 +47,19 @@
 
   $: treeRoots = buildFileTree(entries);
 
+  $: if (selectedPath && mounted) {
+    const keysToExpand = getFolderKeysForPath(selectedPath);
+    if (keysToExpand.length > 0) {
+      expandedKeys = [...new Set([...expandedKeys, ...keysToExpand])];
+    }
+    void tick().then(() => {
+      requestAnimationFrame(() => {
+        const el = listEl?.querySelector(`[data-file-path="${CSS.escape(selectedPath)}"]`);
+        (el as HTMLElement)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    });
+  }
+
   onMount(() => {
     mounted = true;
     if (fileType) {
@@ -58,7 +72,7 @@
   <h2 class="shrink-0 py-2 px-3 text-xs font-normal tracking-wide text-text-secondary border-b border-border-base">
     Files
   </h2>
-  <ul class="flex-1 min-h-0 overflow-auto m-0 px-4 list-none">
+  <ul class="flex-1 min-h-0 overflow-auto m-0 px-4 list-none" bind:this={listEl}>
     {#each treeRoots as node (nodeId(node) + '-' + expandedKeys.join(',') + '-' + (selectedPath ?? ''))}
       <FileTreeNode
         {node}

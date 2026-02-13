@@ -70,7 +70,7 @@
   </li>
 {:else}
   {@const file = node}
-  <li class="list-none mt-1 first:mt-0 w-full min-w-0">
+  <li class="list-none mt-1 first:mt-0 w-full min-w-0" data-file-path={file.path}>
     <div class="w-full min-w-0 box-border" style="padding-left: {levelPaddingLeft}px">
       <div
         class="{cardClass} {file.path === selectedPath ? 'text-primary' : 'text-text-primary'} {file.isBinary ? 'opacity-70' : ''}"

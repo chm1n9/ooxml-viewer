@@ -96,3 +96,15 @@ export function buildFileTree(entries: FileEntry[]): TreeNode[] {
   sortNodes(root);
   return root;
 }
+
+/** Return folder keys that contain the given file path (for auto-expanding tree to selection). */
+export function getFolderKeysForPath(filePath: string): string[] {
+  if (!filePath) return [];
+  const parts = filePath.split('/');
+  parts.pop();
+  const keys: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    keys.push(parts.slice(0, i + 1).join('/'));
+  }
+  return keys;
+}
