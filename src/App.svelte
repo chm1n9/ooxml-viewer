@@ -300,15 +300,17 @@
             Rels
           </button>
         {/if}
-        <button class="h-9 px-4 text-sm font-medium" on:click={newFile}>
+        <button class="h-9 px-4 text-sm font-medium inline-flex items-center gap-2" on:click={newFile}>
+          <span class="i-tabler-plus w-5 h-5 shrink-0" aria-hidden="true"></span>
           New
         </button>
         <button
-          class="h-9 px-4 text-sm font-medium"
+          class="h-9 px-4 text-sm font-medium inline-flex items-center gap-2"
           disabled={saving}
           on:click={save}
         >
-          {saving ? 'Saving…' : 'Save & Download'}
+          <span class="i-tabler-download w-5 h-5 shrink-0" aria-hidden="true"></span>
+          {saving ? 'Saving…' : 'Save'}
         </button>
         <button
           type="button"
@@ -316,7 +318,7 @@
           aria-label="Settings"
           on:click={() => (showSettingsPanel = true)}
         >
-          <span class="i-carbon-settings w-5 h-5 text-text-secondary" aria-hidden="true"></span>
+          <span class="i-tabler-settings w-5 h-5 text-text-secondary" aria-hidden="true"></span>
         </button>
       </div>
     </header>

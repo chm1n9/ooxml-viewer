@@ -5,7 +5,7 @@ export default defineConfig({
     presetUno(), // 默认预设，提供所有工具类
     presetIcons({
       collections: {
-        carbon: () => import('@iconify-json/carbon/icons.json').then((i) => i.default),
+        tabler: () => import('@iconify-json/tabler/icons.json').then((i) => i.default),
       },
     }),
   ],

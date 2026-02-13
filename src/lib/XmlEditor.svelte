@@ -178,8 +178,8 @@
         markerDOM: (open) => {
           const marker = document.createElement('span');
           marker.className = open
-            ? 'i-carbon-chevron-down'
-            : 'i-carbon-chevron-right';
+            ? 'i-tabler-chevron-down'
+            : 'i-tabler-chevron-right';
           return marker;
         },
       }),
@@ -276,8 +276,8 @@
           content: '""',
           position: 'absolute',
           inset: '6px',
-          // Carbon close icon SVG
-          mask: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 32 32\'%3E%3Cpath fill=\'currentColor\' d=\'M24 9.4L22.6 8L16 14.6L9.4 8L8 9.4l6.6 6.6L8 22.6L9.4 24l6.6-6.6l6.6 6.6l1.4-1.4l-6.6-6.6z\'/%3E%3C/svg%3E") center/contain no-repeat',
+          // Tabler X icon SVG (24x24)
+          mask: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\'%3E%3Cpath d=\'M18 6L6 18M6 6l12 12\'/%3E%3C/svg%3E") center/contain no-repeat',
           backgroundColor: 'var(--color-text-secondary)',
         },
         '.cm-search button[name="close"]:hover': {
@@ -374,7 +374,7 @@
               on:mouseenter={showPopover}
               on:mouseleave={scheduleHidePopover}
             >
-              <span class="i-carbon-overflow-menu-horizontal w-3.5 h-3.5" aria-hidden="true"></span>
+              <span class="i-tabler-dots w-3.5 h-3.5" aria-hidden="true"></span>
             </button>
           {/if}
         {/if}

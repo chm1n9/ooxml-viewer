@@ -60,7 +60,7 @@
               on:mouseenter={showPopover}
               on:mouseleave={scheduleHidePopover}
             >
-              <span class="i-carbon-overflow-menu-horizontal w-3.5 h-3.5" aria-hidden="true"></span>
+              <span class="i-tabler-dots w-3.5 h-3.5" aria-hidden="true"></span>
             </button>
           {/if}
         {/if}

@@ -50,7 +50,7 @@
           aria-label="Close"
           on:click={handleClose}
         >
-          <span class="i-carbon-close w-4 h-4" aria-hidden="true"></span>
+          <span class="i-tabler-x w-4 h-4" aria-hidden="true"></span>
         </button>
       </div>
       <div class="settings-body">

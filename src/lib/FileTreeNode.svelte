@@ -46,7 +46,7 @@
       >
         <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{folder.name}/</span>
         <span
-          class="w-3.5 h-3.5 shrink-0 inline-flex items-center justify-center {isExpanded(folder.key) ? 'i-carbon-chevron-down' : 'i-carbon-chevron-right'}"
+          class="w-3.5 h-3.5 shrink-0 inline-flex items-center justify-center {isExpanded(folder.key) ? 'i-tabler-chevron-down' : 'i-tabler-chevron-right'}"
           aria-hidden="true"
         ></span>
       </div>
