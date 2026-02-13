@@ -5,9 +5,8 @@
   import XmlEditor from './lib/XmlEditor.svelte';
   import ImagePreview from './lib/ImagePreview.svelte';
   import RelsGraph from './lib/RelsGraph.svelte';
-  import SearchBar from './lib/SearchBar.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
-  import { initShortcuts, searchStore } from './lib/shortcuts';
+  import { initShortcuts } from './lib/shortcuts';
   import { loadSettings, parseAutoCollapseTags } from './lib/settings';
   import { ACCEPT_OFFICE } from './lib/constants';
   import { getDependenciesForPart } from './lib/relsGraph';
@@ -203,9 +202,6 @@
     input.value = '';
   }
 
-  function onSearchSelectPath(event: CustomEvent<{ path: string }>) {
-    selectedPath = event.detail.path;
-  }
 </script>
 
 <svelte:window
@@ -277,9 +273,6 @@
 />
 
 <main class="m-0 p-0 min-h-screen h-full flex flex-col bg-bg-base" class:select-none={dragging}>
-  {#if $searchStore.open}
-    <SearchBar entries={entries} on:selectPath={onSearchSelectPath} />
-  {/if}
   {#if !hasFile}
     <section class="flex-1 flex flex-col items-center justify-center p-8 box-border bg-bg-base">
       <DropZone on:drop={onDrop} on:click={openFileInput} />

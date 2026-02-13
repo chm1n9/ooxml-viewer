@@ -14,7 +14,7 @@
   } from '@codemirror/language';
   import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
   import { xml } from '@codemirror/lang-xml';
-  import { searchStore } from './shortcuts';
+  import { openSearchStore } from './shortcuts';
   import format from 'xml-formatter';
   import Popover from './Popover.svelte';
 
@@ -318,15 +318,12 @@
     }
   }
 
-  $: if (
-    $searchStore.open &&
-    $searchStore.mode === 'currentFile' &&
-    editorView
-  ) {
-    openSearchPanel(editorView);
+  $: if (editorView) {
+    openSearchStore.set(() => openSearchPanel(editorView));
   }
 
   onDestroy(() => {
+    openSearchStore.set(null);
     if (editorView) {
       editorView.destroy();
       editorView = null;
