@@ -379,10 +379,12 @@
       {#if !readOnly}
         <button
           type="button"
-          class="shrink-0 py-1 px-2 text-sm"
+          class="shrink-0 p-1.5 inline-flex items-center justify-center"
+          title="Format"
+          aria-label="Format"
           on:click={formatXml}
         >
-          Format
+          <span class="i-tabler-code w-4 h-4" aria-hidden="true"></span>
         </button>
       {/if}
     </div>

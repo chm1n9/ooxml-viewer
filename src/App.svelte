@@ -282,7 +282,7 @@
     </section>
   {:else}
     <header class="shrink-0 flex items-center justify-between h-16 px-6 border-b border-border-base bg-bg-base">
-      <span class="font-semibold text-text-primary truncate text-sm">{fileName}</span>
+      <span class="font-semibold text-text-primary truncate text-base">{fileName}</span>
       <div class="flex items-center gap-2">
         {#if false}
           <button
