@@ -6,7 +6,9 @@
   import ImagePreview from './lib/ImagePreview.svelte';
   import RelsGraph from './lib/RelsGraph.svelte';
   import SearchBar from './lib/SearchBar.svelte';
+  import SettingsPanel from './lib/SettingsPanel.svelte';
   import { initShortcuts, searchStore } from './lib/shortcuts';
+  import { loadSettings, parseAutoCollapseTags } from './lib/settings';
   import { ACCEPT_OFFICE } from './lib/constants';
   import { getDependenciesForPart } from './lib/relsGraph';
   import { getRoute, getPathFromState, pushRoute, replaceToBase } from './lib/routeHistory';
@@ -22,6 +24,8 @@
   let saving = false;
   let error = '';
   let showRelsGraph = false;
+  let showSettingsPanel = false;
+  let settingsSnapshot = loadSettings();
 
   const SIDEBAR_MIN = 260;
   const SIDEBAR_MAX = 600;
@@ -306,8 +310,21 @@
         >
           {saving ? 'Saving…' : 'Save & Download'}
         </button>
+        <button
+          type="button"
+          class="h-9 w-9 p-0 inline-flex items-center justify-center shrink-0"
+          aria-label="Settings"
+          on:click={() => (showSettingsPanel = true)}
+        >
+          <span class="i-carbon-settings w-5 h-5 text-text-secondary" aria-hidden="true"></span>
+        </button>
       </div>
     </header>
+    <SettingsPanel
+      visible={showSettingsPanel}
+      onClose={() => (showSettingsPanel = false)}
+      onSave={(s) => (settingsSnapshot = s)}
+    />
     {#if error}
       <p class="shrink-0 py-2 px-6 m-0 bg-red-50 text-red-600 text-sm">
         {error}
@@ -349,6 +366,7 @@
             content={editorContent}
             readOnly={currentEntry?.isBinary ?? true}
             dependencies={currentDependencies}
+            autoCollapseTags={parseAutoCollapseTags(settingsSnapshot.autoCollapseTags)}
             on:contentChange={onContentChange}
             on:selectPath={onFileSelect}
           />

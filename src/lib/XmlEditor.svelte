@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { EditorView, lineNumbers, keymap } from '@codemirror/view';
+  import { EditorView, lineNumbers, keymap, ViewPlugin } from '@codemirror/view';
   import { EditorState } from '@codemirror/state';
   import {
     syntaxHighlighting,
@@ -9,6 +9,8 @@
     foldGutter,
     foldKeymap,
     indentUnit,
+    foldEffect,
+    syntaxTree,
   } from '@codemirror/language';
   import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
   import { xml } from '@codemirror/lang-xml';
@@ -32,6 +34,8 @@
   export let content: string = '';
   export let readOnly: boolean = false;
   export let dependencies: string[] = [];
+  /** Tag names to auto-fold when opening a file (e.g. ['w:p', 'w:t']). */
+  export let autoCollapseTags: string[] = [];
 
   const DEPENDS_INLINE_MAX = 3;
   let popoverVisible = false;
@@ -56,6 +60,101 @@
   function onPopoverMouseLeave() {
     popoverHover = false;
     scheduleHidePopover();
+  }
+
+  /** Create a ViewPlugin that applies auto-collapse when syntax tree is ready. */
+  function createAutoCollapseExtension(tagSet: Set<string>) {
+    return ViewPlugin.fromClass(
+      class {
+        didFold = false;
+
+        update(update: any) {
+          // 已经折叠过，跳过
+          if (this.didFold) return;
+
+          const state = update.state;
+          const tree = syntaxTree(state);
+
+          // 判断：语法树是否覆盖全文
+          if (tree.length !== state.doc.length) return;
+
+          // 延迟应用折叠，避免在更新过程中触发新的更新
+          this.didFold = true;
+          setTimeout(() => {
+            applyAutoCollapseTags(update.view, tagSet);
+          }, 0);
+        }
+      }
+    );
+  }
+
+  /** Collect fold ranges for all XML elements whose tag name is in tagSet, by walking the syntax tree. */
+  function applyAutoCollapseTags(view: EditorView, tagSet: Set<string>): number {
+    const state = view.state;
+    const tree = syntaxTree(state);
+    const foldRanges: Array<{ from: number; to: number; tagName: string }> = [];
+
+    tree.iterate({
+      enter: (node) => {
+        // 只处理 Element 节点
+        if (node.type.name !== 'Element') return;
+
+        // 查找 OpenTag 和 CloseTag
+        let openTagEnd = -1;
+        let closeTagStart = -1;
+        let tagName = '';
+
+        // 创建新的游标来遍历子节点
+        const cursor = node.node.cursor();
+        if (!cursor.firstChild()) return;
+
+        do {
+          if (cursor.type.name === 'OpenTag') {
+            // 记录 OpenTag 的结束位置
+            openTagEnd = cursor.to;
+
+            // 在 OpenTag 内查找 TagName
+            const openCursor = cursor.node.cursor();
+            if (openCursor.firstChild()) {
+              do {
+                if (openCursor.type.name === 'TagName') {
+                  tagName = state.sliceDoc(openCursor.from, openCursor.to);
+                  break;
+                }
+              } while (openCursor.nextSibling());
+            }
+          } else if (cursor.type.name === 'CloseTag') {
+            // 记录 CloseTag 的开始位置
+            closeTagStart = cursor.from;
+          } else if (cursor.type.name === 'SelfClosingTag') {
+            // 自闭合标签，不需要折叠
+            const selfCursor = cursor.node.cursor();
+            if (selfCursor.firstChild()) {
+              do {
+                if (selfCursor.type.name === 'TagName') {
+                  tagName = state.sliceDoc(selfCursor.from, selfCursor.to);
+                  break;
+                }
+              } while (selfCursor.nextSibling());
+            }
+          }
+        } while (cursor.nextSibling());
+
+        // 如果找到了标签名，且在目标集合中，且有有效的折叠范围
+        if (tagName && tagSet.has(tagName) && openTagEnd > 0 && closeTagStart > openTagEnd) {
+          foldRanges.push({ from: openTagEnd, to: closeTagStart, tagName });
+        }
+      },
+    });
+
+    if (foldRanges.length > 0) {
+      // 一次性应用所有折叠效果
+      const effects = foldRanges.map(range => foldEffect.of({ from: range.from, to: range.to }));
+      view.dispatch({ effects });
+      console.log(`Auto-collapsed ${effects.length} tags:`, foldRanges.map(r => r.tagName));
+    }
+
+    return foldRanges.length;
   }
 
   let editorContainer: HTMLDivElement;
@@ -96,6 +195,8 @@
           dispatch('contentChange', { value: update.state.doc.toString() });
         }
       }),
+      // 自动折叠标签的扩展
+      ...(autoCollapseTags.length > 0 ? [createAutoCollapseExtension(new Set(autoCollapseTags))] : []),
       EditorView.theme({
         '&': { fontSize: '13px' },
         '.cm-content': { fontFamily: 'inherit', padding: '1rem' },
