@@ -38,7 +38,7 @@
 </script>
 
 <div
-  class="flex flex-col items-center justify-center p-8 min-h-[200px] border-2 border-dashed border-border-base rounded-lg bg-white cursor-pointer transition-colors hover:border-primary hover:bg-primary-light {dragging ? 'border-primary bg-primary-light' : ''}"
+  class="hero-transition flex flex-col items-center justify-center p-8 min-h-[200px] border-2 border-dashed border-border-base rounded-lg bg-white cursor-pointer transition-colors hover:border-primary hover:bg-primary-light {dragging ? 'border-primary bg-primary-light' : ''}"
   role="button"
   tabindex="0"
   on:click={() => dispatch('click')}

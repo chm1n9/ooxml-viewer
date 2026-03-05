@@ -1,14 +1,16 @@
-import 'normalize.css/normalize.css';
-import 'virtual:uno.css';
-import App from './App.svelte';
-import { loadOfficeFile } from './lib/ooxml';
+import "normalize.css/normalize.css";
+import "virtual:uno.css";
+import App from "./App.svelte";
+import { loadOfficeFile } from "./lib/ooxml";
 
-const base = (import.meta.env.BASE_URL ?? '/').replace(/\/*$/, '') || '';
+const base = (import.meta.env.BASE_URL ?? "/").replace(/\/*$/, "") || "";
 
 /** Dev-only: resolve first file to open from __dev_first_pptx or list config. */
 async function loadDevAutoOpenFile(): Promise<File | null> {
   const getList = async (): Promise<string[]> => {
-    const listRes = await fetch(`${base}/__dev_pptx_list.json`).catch(() => null);
+    const listRes = await fetch(`${base}/__dev_pptx_list.json`).catch(
+      () => null
+    );
     if (listRes?.ok) return listRes.json();
     const autoRes = await fetch(`${base}/__auto_open.json`).catch(() => null);
     return autoRes?.ok ? autoRes.json() : [];
@@ -27,7 +29,9 @@ async function loadDevAutoOpenFile(): Promise<File | null> {
     const blob = await devRes.blob();
     if (blob.size > 0) {
       const name =
-        devRes.headers.get('Content-Disposition')?.match(/filename="?([^"]+)"?/)?.[1] ?? 'auto.pptx';
+        devRes.headers
+          .get("Content-Disposition")
+          ?.match(/filename="?([^"]+)"?/)?.[1] ?? "auto.pptx";
       return new File([blob], name);
     }
   }
@@ -36,7 +40,7 @@ async function loadDevAutoOpenFile(): Promise<File | null> {
 
 /** Dev: load file first then mount so App receives initialData in props and onMount sees it. Prod: mount immediately. */
 async function bootstrap() {
-  const target = document.getElementById('app')!;
+  const target = document.getElementById("app")!;
   let initialData: Awaited<ReturnType<typeof loadOfficeFile>> | null = null;
   if (import.meta.env.DEV) {
     const file = await loadDevAutoOpenFile();

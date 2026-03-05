@@ -140,16 +140,27 @@
 
   $: if (!hasFile) replaceToBase();
 
+  /** Run callback inside View Transitions API when supported, so hero elements can animate. */
+  function withViewTransition(fn: () => void) {
+    if (typeof document !== 'undefined' && 'startViewTransition' in document) {
+      (document as Document & { startViewTransition: (cb: () => void) => { finished: Promise<void> } }).startViewTransition(fn);
+    } else {
+      fn();
+    }
+  }
+
   async function onDrop(event: CustomEvent<{ file: File }>) {
     const file = event.detail.file;
     error = '';
     revokePreviewUrls(entries);
     try {
       const result = await loadOfficeFile(file);
-      zip = result.zip;
-      entries = result.entries;
-      fileName = result.fileName;
-      selectedPath = null;
+      withViewTransition(() => {
+        zip = result.zip;
+        entries = result.entries;
+        fileName = result.fileName;
+        selectedPath = null;
+      });
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to open file';
     }
@@ -169,12 +180,7 @@
   }
 
   function newFile() {
-    revokePreviewUrls(entries);
-    zip = null;
-    entries = [];
-    fileName = '';
-    selectedPath = null;
-    error = '';
+    openFileInput();
   }
 
   async function save() {
@@ -211,6 +217,11 @@
 />
 <svelte:head>
   <style>
+    .hero-transition { view-transition-name: hero; }
+    ::view-transition-old(hero),
+    ::view-transition-new(hero) {
+      animation-duration: 0.3s;
+    }
     html, body, #app { margin: 0; padding: 0; height: 100%; }
     body {
       background: var(--color-bg-base);
@@ -293,7 +304,7 @@
             Rels
           </button>
         {/if}
-        <button class="h-9 px-4 text-sm font-medium inline-flex items-center gap-2" on:click={newFile}>
+        <button class="hero-transition h-9 px-4 text-sm font-medium inline-flex items-center gap-2" on:click={newFile}>
           <span class="i-tabler-plus w-5 h-5 shrink-0" aria-hidden="true"></span>
           New
         </button>

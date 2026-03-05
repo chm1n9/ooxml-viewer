@@ -71,7 +71,7 @@
   });
 
   onDestroy(() => {
-    if (popoverElement && document.body.contains(popoverElement)) {
+    if (popoverElement && popoverElement.parentNode === document.body) {
       document.body.removeChild(popoverElement);
     }
     window.removeEventListener('scroll', updatePosition, true);
