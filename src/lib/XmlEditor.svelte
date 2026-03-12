@@ -37,7 +37,7 @@
   /** Tag names to auto-fold when opening a file (e.g. ['w:p', 'w:t']). */
   export let autoCollapseTags: string[] = [];
 
-  const DEPENDS_INLINE_MAX = 3;
+  const DEPENDS_INLINE_MAX = 2;
   let popoverVisible = false;
   let popoverHover = false;
   let hidePopoverTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -349,13 +349,13 @@
   {#if path}
     <div class="shrink-0 flex items-center gap-2 py-2 px-4 text-xs border-b border-border-base bg-bg-secondary">
       <span class="truncate shrink-0 text-text-secondary max-w-64" title={path}>{path}</span>
-      <div class="flex-1 min-w-0 grid grid-flow-col auto-cols-max gap-1.5 overflow-hidden items-center">
+      <div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
         {#if dependencies.length > 0}
-          <span class="text-text-secondary">Depends on:</span>
+          <span class="text-text-secondary shrink-0">Depends on:</span>
           {#each dependencies.slice(0, DEPENDS_INLINE_MAX) as dep}
             <button
               type="button"
-              class="dep-btn px-1.5 py-0.5 rounded bg-bg-element text-text-primary truncate max-w-[140px] hover:bg-bg-hover"
+              class="dep-btn px-1 py-0.5 rounded bg-bg-element text-text-primary hover:bg-bg-hover shrink-0 whitespace-nowrap"
               title={dep}
               on:click={() => dispatch('selectPath', { path: dep })}
             >
@@ -366,7 +366,7 @@
             <button
               bind:this={popoverAnchor}
               type="button"
-              class="dep-btn px-1.5 py-0.5 rounded bg-bg-element text-text-primary hover:bg-bg-hover inline-flex items-center justify-center"
+              class="dep-btn px-1 py-0.5 rounded bg-bg-element text-text-primary hover:bg-bg-hover inline-flex items-center justify-center shrink-0"
               title="Show all"
               on:mouseenter={showPopover}
               on:mouseleave={scheduleHidePopover}

@@ -128,9 +128,22 @@
   /** Ref kept in sync so popstate handler always sees current state (avoids stale closure). */
   let routeStateRef: { hasFile: boolean; entries: FileEntry[] } = { hasFile: false, entries: [] };
   $: routeStateRef = { hasFile, entries };
+  /** Priority for Depends on order: theme (0) > master (1) > layout (2) > slide (3) > others (4). */
+  function dependencyOrder(path: string): number {
+    const p = path.replace(/\\/g, '/').toLowerCase();
+    if (/\/theme\//.test(p)) return 0;
+    if (/master/i.test(p)) return 1;
+    if (/layout/i.test(p)) return 2;
+    if (/\/slides\//.test(p)) return 3;
+    return 4;
+  }
+
   $: currentDependencies = (() => {
     const list = selectedPath ? getDependenciesForPart(selectedPath, entries) : [];
     return [...list].sort((a, b) => {
+      const orderA = dependencyOrder(a);
+      const orderB = dependencyOrder(b);
+      if (orderA !== orderB) return orderA - orderB;
       const aImage = isImagePath(a) || /\/media\//i.test(a);
       const bImage = isImagePath(b) || /\/media\//i.test(b);
       if (aImage === bImage) return 0;
@@ -292,7 +305,7 @@
       {/if}
     </section>
   {:else}
-    <header class="shrink-0 flex items-center justify-between h-16 px-6 border-b border-border-base bg-bg-base">
+    <header class="shrink-0 flex items-center justify-between h-12 px-6 border-b border-border-base bg-bg-base">
       <span class="font-semibold text-text-primary truncate text-base">{fileName}</span>
       <div class="flex items-center gap-2">
         {#if false}

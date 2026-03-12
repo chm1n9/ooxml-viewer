@@ -19,7 +19,7 @@ export function getRoute(): { path: string } | null {
   if (!rest.startsWith(ROUTE_PREFIX)) return null;
   const raw = rest.slice(ROUTE_PREFIX.length);
   const path = raw.replace(/^\/+|\/+$/g, '');
-  return path || null;
+  return path ? { path } : null;
 }
 
 /** Build pathname for part path. */
