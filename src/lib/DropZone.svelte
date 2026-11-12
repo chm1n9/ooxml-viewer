@@ -47,6 +47,6 @@
   on:drop={onDrop}
   on:keydown={onKeydown}
 >
-  <p class="m-0 text-base text-text-primary">Drop .pptx / .docx / .xlsx here</p>
+  <p class="m-0 text-base text-text-primary">Drop .pptx / .docx / .xlsx / .thmx here</p>
   <p class="mt-1 text-sm text-text-secondary">or click to choose file</p>
 </div>

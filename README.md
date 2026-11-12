@@ -1,10 +1,11 @@
 # ooxml-file
 
-Static web app to open OOXML files (.pptx / .docx / .xlsx), browse contents as a tree, edit XML, and repack & download.
+Static web app to open OOXML files (.pptx / .docx / .xlsx / .thmx), browse contents as a tree, edit XML, and repack & download.
 
 ## Features
 
-- **Open OOXML:** Drag-and-drop or click to choose `.pptx`, `.docx`, `.xlsx` (and legacy `.ppt`, `.doc`, `.xls`).
+- **Open OOXML:** Drag-and-drop or click to choose `.pptx`, `.docx`, `.xlsx`, `.thmx` (and legacy `.ppt`, `.doc`, `.xls`).
+- **Office themes:** Open `.thmx` packages to browse and edit theme XML and relationships, preview thumbnails, and preserve embedded fonts and other binary resources when saving as `.thmx`.
 - **File tree:** Left sidebar shows entries as a folder tree; expand/collapse with › indicator.
 - **Editor / preview:** Right side shows XML editor for text parts, image preview for `/media/` and image extensions.
 - **Edit & save:** Edit XML in place; "Save & Download" repacks the ZIP and triggers download.
@@ -12,7 +13,7 @@ Static web app to open OOXML files (.pptx / .docx / .xlsx), browse contents as a
 
 ## UI Overview
 
-- **Empty state:** Centered drop zone — “Drop .pptx / .docx / .xlsx here” and “or click to choose file”; dashed border, hover highlight.
+- **Empty state:** Centered drop zone — “Drop .pptx / .docx / .xlsx / .thmx here” and “or click to choose file”; dashed border, hover highlight.
 - **With file open:**
   - **Header:** File name (truncated) on the left; “Save & Download” button on the right (blue primary).
   - **Left panel (Files):** Tree with “Files” title; folders use › (rotates 90° when expanded), fixed-width chevron column; files show name; selected row highlighted; independent scroll.

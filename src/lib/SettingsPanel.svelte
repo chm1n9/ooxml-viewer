@@ -17,31 +17,29 @@
     onClose();
   }
 
-  function handleOverlayClick(e: MouseEvent) {
-    if ((e.target as HTMLElement).getAttribute('data-settings-overlay') === 'true') {
-      handleClose();
-    }
-  }
-
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') handleClose();
+    if (visible && e.key === 'Escape') handleClose();
   }
 </script>
 
+<svelte:window on:keydown={handleKeydown} />
+
 {#if visible}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_click_events_have_key_events -->
   <div
-    data-settings-overlay="true"
+    class="settings-overlay"
     role="dialog"
     aria-modal="true"
     aria-labelledby="settings-panel-title"
     tabindex="-1"
-    class="settings-overlay"
-    on:click={handleOverlayClick}
-    on:keydown={handleKeydown}
   >
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_click_events_have_key_events -->
-    <div class="settings-panel" role="document" on:click|stopPropagation>
+    <button
+      type="button"
+      class="settings-overlay-backdrop"
+      aria-label="Close overlay"
+      on:click={handleClose}
+      on:keydown={handleKeydown}
+    ></button>
+    <div class="settings-panel" role="document">
       <div class="settings-header">
         <h2 id="settings-panel-title" class="settings-title">Settings</h2>
         <button
@@ -83,11 +81,27 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.4);
     padding: 24px;
     box-sizing: border-box;
   }
+  .settings-overlay:focus {
+    outline: none;
+  }
+  .settings-overlay-backdrop {
+    position: absolute;
+    inset: 0;
+    border: none;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.4);
+    cursor: default;
+    font: inherit;
+  }
+  .settings-overlay-backdrop:focus {
+    outline: none;
+  }
   .settings-panel {
+    position: relative;
+    z-index: 1;
     width: 100%;
     max-width: 420px;
     max-height: 90vh;

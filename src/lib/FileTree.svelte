@@ -69,10 +69,10 @@
 </script>
 
 <div class="flex flex-col h-full w-full min-w-0 overflow-hidden">
-  <h2 class="shrink-0 py-2 px-3 text-xs font-normal tracking-wide text-text-secondary border-b border-border-base">
+  <h2 class="shrink-0 flex items-center h-10 box-border m-0 px-5 text-xs font-normal tracking-wide text-text-secondary border-b border-border-base">
     Files
   </h2>
-  <ul class="flex-1 min-h-0 overflow-auto m-0 px-4 list-none" bind:this={listEl}>
+  <ul class="flex-1 min-h-0 overflow-auto m-0 px-3 py-2 list-none" bind:this={listEl}>
     {#each treeRoots as node (nodeId(node) + '-' + expandedKeys.join(',') + '-' + (selectedPath ?? ''))}
       <FileTreeNode
         {node}

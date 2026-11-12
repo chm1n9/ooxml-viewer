@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyFileState from './EmptyFileState.svelte';
   import { createEventDispatcher } from 'svelte';
   import Popover from './Popover.svelte';
 
@@ -36,7 +37,7 @@
 
 <div class="flex flex-col flex-1 min-w-0 overflow-hidden bg-white rounded-l-lg border border-border-base border-l-0">
   {#if path}
-    <div class="shrink-0 flex items-center gap-2 py-2 px-4 text-xs border-b border-border-base bg-bg-secondary">
+    <div class="shrink-0 flex items-center h-10 box-border gap-2 px-3 text-xs border-b border-border-base bg-bg-secondary">
       <span class="truncate shrink-0 text-text-secondary max-w-64" title={path}>{path}</span>
       <div class="flex-1 min-w-0 grid grid-flow-col auto-cols-max gap-1.5 overflow-hidden items-center">
         {#if dependencies.length > 0}
@@ -74,9 +75,7 @@
       {/if}
     </div>
   {:else}
-    <div class="flex-1 flex items-center justify-center text-text-secondary text-sm">
-      Select file to view content
-    </div>
+    <EmptyFileState />
   {/if}
 </div>
 

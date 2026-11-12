@@ -6,6 +6,7 @@
   import ImagePreview from './lib/ImagePreview.svelte';
   import RelsGraph from './lib/RelsGraph.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
+  import GitHubLink from './lib/GitHubLink.svelte';
   import { initShortcuts } from './lib/shortcuts';
   import { loadSettings, parseAutoCollapseTags } from './lib/settings';
   import { ACCEPT_OFFICE } from './lib/constants';
@@ -193,7 +194,16 @@
   }
 
   function newFile() {
-    openFileInput();
+    revokePreviewUrls(entries);
+    requestAnimationFrame(() => {
+      withViewTransition(() => {
+        zip = null;
+        entries = [];
+        fileName = '';
+        selectedPath = null;
+        error = '';
+      });
+    });
   }
 
   async function save() {
@@ -242,9 +252,10 @@
     }
     ul, ol { padding-inline-start: 0; }
     /* Unified flat button: higher specificity so we override CM and others */
-    #app button,
+    #app button:not(.settings-overlay-backdrop),
+    #app .app-button,
     #app .cm-button,
-    #app main button {
+    #app main button:not(.settings-overlay-backdrop) {
       box-shadow: none !important;
       background-image: none !important;
       background-color: var(--color-bg-secondary) !important;
@@ -254,11 +265,13 @@
       font: inherit;
       cursor: pointer;
     }
-    #app button:hover,
+    #app button:not(.settings-overlay-backdrop):hover,
+    #app .app-button:hover,
     #app .cm-button:hover {
       background-color: var(--color-bg-hover) !important;
     }
-    #app button:active,
+    #app button:not(.settings-overlay-backdrop):active,
+    #app .app-button:active,
     #app .cm-button:active {
       background-color: var(--color-bg-hover) !important;
     }
@@ -296,8 +309,11 @@
   class="hidden"
 />
 
-<main class="m-0 p-0 min-h-screen h-full flex flex-col bg-bg-base" class:select-none={dragging}>
+<main class="relative m-0 p-0 min-h-screen h-full flex flex-col bg-bg-base" class:select-none={dragging}>
   {#if !hasFile}
+    <div class="absolute top-3 right-3">
+      <GitHubLink />
+    </div>
     <section class="flex-1 flex flex-col items-center justify-center p-8 box-border bg-bg-base">
       <DropZone on:drop={onDrop} on:click={openFileInput} />
       {#if error}
@@ -305,9 +321,9 @@
       {/if}
     </section>
   {:else}
-    <header class="shrink-0 flex items-center justify-between h-12 px-6 border-b border-border-base bg-bg-base">
-      <span class="font-semibold text-text-primary truncate text-base">{fileName}</span>
-      <div class="flex items-center gap-2">
+    <header class="shrink-0 flex items-center justify-between gap-3 px-3 py-3 border-b border-border-base bg-bg-base">
+      <span class="min-w-0 pl-2 font-semibold text-text-primary truncate text-base">{fileName}</span>
+      <div class="shrink-0 flex items-center gap-2">
         {#if false}
           <button
             class="h-9 px-4 text-sm font-medium"
@@ -337,6 +353,7 @@
         >
           <span class="i-tabler-settings w-5 h-5 text-text-secondary" aria-hidden="true"></span>
         </button>
+        <GitHubLink />
       </div>
     </header>
     <SettingsPanel
