@@ -1,0 +1,53 @@
+src/lib/DropZone.svelte
+  s_34966ce520a2de::t_120d4e157b6596 50
+src/lib/SettingsPanel.svelte
+  s_34966ce520a2de::t_a064e03a9fa102 96
+  s_6bb3b43bb01572::t_54e231ad37bf0d 21,25-26,29,35-42,87-95,97-101,103-104
+README.md
+  s_34966ce520a2de::t_120d4e157b6596 3,7-8,16
+src/lib/GitHubLink.svelte
+  s_34966ce520a2de::t_cacabf9a747b6d 7
+  s_34966ce520a2de::t_2a9ea4073aebed 1-6,8-10
+src/lib/ImagePreview.svelte
+  s_34966ce520a2de::t_66df60ff167c61 40
+  s_34966ce520a2de::t_b25b446d9ac547 2,78
+src/lib/constants.ts
+  s_34966ce520a2de::t_120d4e157b6596 2,4
+src/lib/FileTree.svelte
+  s_34966ce520a2de::t_66df60ff167c61 72,75
+src/App.svelte
+  s_34966ce520a2de::t_cacabf9a747b6d 256,269,274
+  s_34966ce520a2de::t_66df60ff167c61 314,324-326
+  s_34966ce520a2de::t_a064e03a9fa102 197-206,255,258,268,273
+  s_34966ce520a2de::t_2a9ea4073aebed 9,312,315-316,356
+src/lib/XmlEditor.svelte
+  s_34966ce520a2de::t_b25b446d9ac547 2,398
+  s_34966ce520a2de::t_66df60ff167c61 351
+src/lib/EmptyFileState.svelte
+  s_34966ce520a2de::t_b25b446d9ac547 1-13,15-23
+  s_34966ce520a2de::t_64866a430addf9 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "0499fdea360ed0ed6b884fb9c8d03fdf631f13e9",
+  "prompts": {},
+  "sessions": {
+    "s_34966ce520a2de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cd9d-69f2-7603-877d-f317e30c426b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "miles.cheng <miles.cheng@zoom.us>"
+    },
+    "s_6bb3b43bb01572": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17c9d-0098-7553-8095-d4472ea69846",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "miles.cheng <miles.cheng@zoom.us>"
+    }
+  }
+}
