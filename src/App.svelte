@@ -3,25 +3,36 @@
   import DropZone from './lib/DropZone.svelte';
   import FileTree from './lib/FileTree.svelte';
   import XmlEditor from './lib/XmlEditor.svelte';
+  import BinaryPreview from './lib/BinaryPreview.svelte';
   import ImagePreview from './lib/ImagePreview.svelte';
   import RelsGraph from './lib/RelsGraph.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
   import GitHubLink from './lib/GitHubLink.svelte';
+  import DiscardChangesDialog from './lib/DiscardChangesDialog.svelte';
+  import { createEditorSearchSession } from './lib/editorSearch';
   import { initShortcuts } from './lib/shortcuts';
   import { loadSettings, parseAutoCollapseTags } from './lib/settings';
   import { ACCEPT_OFFICE } from './lib/constants';
-  import { getDependenciesForPart } from './lib/relsGraph';
+  import { buildRelationsIndex, getRelationshipTargets } from './lib/relsGraph';
   import { getRoute, getPathFromState, pushRoute, replaceToBase } from './lib/routeHistory';
   import { isImagePath, loadOfficeFile, repackAndDownload, type FileEntry } from './lib/ooxml';
   import type JSZip from 'jszip';
 
   let teardownShortcuts: (() => void) | null = null;
+  let fileTree: FileTree | null = null;
+  let saveShortcutLabel = 'Ctrl+S';
 
   let zip: JSZip | null = null;
   let entries: FileEntry[] = [];
   let fileName = '';
+  let searchSession = createEditorSearchSession();
   let selectedPath: string | null = null;
   let saving = false;
+  let loading = false;
+  let notice = '';
+  let exportedContents = new Map<string, string>();
+  let noticeTimeout: ReturnType<typeof setTimeout> | undefined;
+  let discardResolver: ((discard: boolean) => void) | null = null;
   let error = '';
   let showRelsGraph = false;
   let showSettingsPanel = false;
@@ -33,6 +44,42 @@
   const SIDEBAR_STORAGE_KEY = 'ooxml-viewer-sidebar-width';
 
   let sidebarWidth = SIDEBAR_DEFAULT;
+  let homeDragging = false;
+  let homeDragDepth = 0;
+
+  function resetHomeDrag() {
+    homeDragDepth = 0;
+    homeDragging = false;
+  }
+
+  function onHomeDragEnter(event: DragEvent) {
+    if (hasFile || !event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    homeDragDepth++;
+    homeDragging = true;
+  }
+
+  function onHomeDragOver(event: DragEvent) {
+    if (hasFile || !event.dataTransfer?.types.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = loading ? 'none' : 'copy';
+  }
+
+  function onHomeDragLeave(event: DragEvent) {
+    if (hasFile || !event.dataTransfer?.types.includes('Files')) return;
+    homeDragDepth = Math.max(0, homeDragDepth - 1);
+    homeDragging = homeDragDepth > 0;
+  }
+
+  function onHomeDrop(event: DragEvent) {
+    if (hasFile) return;
+    const file = event.dataTransfer?.files[0];
+    if (!file) { resetHomeDrag(); return; }
+    event.preventDefault();
+    resetHomeDrag();
+    void onDrop(new CustomEvent('drop', { detail: { file } }));
+  }
+
   let dragging = false;
   let dragStartX = 0;
   let dragStartWidth = 0;
@@ -54,10 +101,39 @@
   export let initialData: { zip: JSZip; entries: FileEntry[]; fileName: string } | null = null;
   let initialDataApplied = false;
 
+  function snapshotContents(list: FileEntry[]) {
+    return new Map(list.filter((entry) => !entry.isBinary).map((entry) => [entry.path, entry.content]));
+  }
+
+  $: modifiedPaths = new Set(entries
+    .filter((entry) => !entry.isBinary && exportedContents.get(entry.path) !== entry.content)
+    .map((entry) => entry.path));
+  $: hasUnexportedChanges = modifiedPaths.size > 0;
+
+  async function confirmDiscard(): Promise<boolean> {
+    if (!hasUnexportedChanges) return true;
+    if (discardResolver) return false;
+    return new Promise((resolve) => (discardResolver = resolve));
+  }
+
+  function resolveDiscard(discard: boolean) {
+    const resolve = discardResolver;
+    discardResolver = null;
+    resolve?.(discard);
+  }
+
+  function onBeforeUnload(event: BeforeUnloadEvent) {
+    if (!hasUnexportedChanges) return;
+    event.preventDefault();
+    event.returnValue = '';
+  }
+
   $: if (initialData && zip === null && !initialDataApplied) {
     initialDataApplied = true;
     zip = initialData.zip;
+    searchSession = createEditorSearchSession();
     entries = initialData.entries;
+    exportedContents = snapshotContents(entries);
     fileName = initialData.fileName;
     selectedPath = null;
   }
@@ -103,7 +179,12 @@
   }
 
   onMount(() => {
-    teardownShortcuts = initShortcuts();
+    saveShortcutLabel = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
+    teardownShortcuts = initShortcuts({
+      hasFile: () => zip !== null && entries.length > 0,
+      isModalOpen: () => showSettingsPanel || discardResolver !== null || document.querySelector('dialog[open]') !== null,
+      onSave: handleSaveShortcut,
+    });
     const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY);
     if (stored != null) {
       const n = parseInt(stored, 10);
@@ -118,6 +199,8 @@
   onDestroy(() => {
     window.removeEventListener('popstate', onPopState);
     teardownShortcuts?.();
+    clearTimeout(noticeTimeout);
+    revokePreviewUrls(entries);
   });
 
   $: currentEntry = selectedPath
@@ -139,8 +222,13 @@
     return 4;
   }
 
+  $: packagePaths = new Set(entries.map(entry => entry.path));
+  $: relationshipTargets = selectedPath ? getRelationshipTargets(selectedPath, entries) : new Map<string, string>();
+  $: relationsIndex = buildRelationsIndex(entries);
+  $: currentReferencedBy = [...(relationsIndex.referencedBy.get(selectedPath ?? '') ?? [])]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   $: currentDependencies = (() => {
-    const list = selectedPath ? getDependenciesForPart(selectedPath, entries) : [];
+    const list = [...(relationsIndex.references.get(selectedPath ?? '') ?? [])];
     return [...list].sort((a, b) => {
       const orderA = dependencyOrder(a);
       const orderB = dependencyOrder(b);
@@ -164,19 +252,27 @@
   }
 
   async function onDrop(event: CustomEvent<{ file: File }>) {
+    if (loading || saving) return;
+    if (!(await confirmDiscard()) || loading || saving) return;
     const file = event.detail.file;
     error = '';
-    revokePreviewUrls(entries);
+    notice = '';
+    loading = true;
     try {
       const result = await loadOfficeFile(file);
       withViewTransition(() => {
+        revokePreviewUrls(entries);
         zip = result.zip;
+        searchSession = createEditorSearchSession();
         entries = result.entries;
+        exportedContents = snapshotContents(entries);
         fileName = result.fileName;
         selectedPath = null;
       });
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to open file';
+    } finally {
+      loading = false;
     }
   }
 
@@ -185,33 +281,66 @@
     if (hasFile && selectedPath) pushRoute(selectedPath);
   }
 
-  function onContentChange(event: CustomEvent<{ value: string }>) {
+  function onRevealPath(event: CustomEvent<{ path: string }>) {
+    void fileTree?.reveal(event.detail.path);
+  }
+
+  function onContentChange(event: CustomEvent<{ value: string; initial?: boolean }>) {
     if (!selectedPath) return;
     const entry = entries.find((e) => e.path === selectedPath);
     if (entry && !entry.isBinary) {
+      // Automatic display formatting is not a user edit. Keep an already-dirty baseline intact.
+      if (event.detail.initial && exportedContents.get(entry.path) === entry.content) {
+        exportedContents = new Map(exportedContents).set(entry.path, event.detail.value);
+      }
       entry.content = event.detail.value;
+      entries = [...entries];
     }
   }
 
-  function newFile() {
+  async function newFile() {
+    if (loading || saving) return;
+    if (!(await confirmDiscard()) || loading || saving) return;
     revokePreviewUrls(entries);
     requestAnimationFrame(() => {
       withViewTransition(() => {
         zip = null;
         entries = [];
+        searchSession = createEditorSearchSession();
+        exportedContents = new Map();
         fileName = '';
         selectedPath = null;
         error = '';
+        notice = '';
       });
     });
   }
 
+  function showNotice(message: string) {
+    notice = message;
+    clearTimeout(noticeTimeout);
+    noticeTimeout = setTimeout(() => (notice = ''), 6000);
+  }
+
+  function handleSaveShortcut() {
+    if (saving || loading) return;
+    if (!hasUnexportedChanges) {
+      showNotice('No unexported changes.');
+      return;
+    }
+    void save();
+  }
+
   async function save() {
-    if (!zip || entries.length === 0) return;
+    if (!zip || entries.length === 0 || saving || loading) return;
     saving = true;
     error = '';
+    notice = '';
+    const downloadedEntries = entries.map((entry) => ({ ...entry }));
     try {
-      await repackAndDownload(zip, entries, fileName);
+      await repackAndDownload(zip, downloadedEntries, fileName);
+      exportedContents = snapshotContents(downloadedEntries);
+      showNotice('Download started. Your original file is unchanged.');
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to save';
     } finally {
@@ -234,6 +363,13 @@
 </script>
 
 <svelte:window
+  on:dragenter={onHomeDragEnter}
+  on:dragover={onHomeDragOver}
+  on:dragleave={onHomeDragLeave}
+  on:drop={onHomeDrop}
+  on:dragend={resetHomeDrag}
+  on:blur={resetHomeDrag}
+  on:beforeunload={onBeforeUnload}
   on:mousemove={onWindowMouseMove}
   on:mouseup={onWindowMouseUp}
   on:mouseleave={onWindowMouseUp}
@@ -248,14 +384,28 @@
     html, body, #app { margin: 0; padding: 0; height: 100%; }
     body {
       background: var(--color-bg-base);
-      font-family: "berkeleyMono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .upload-home {
+      padding-bottom: calc(2rem + clamp(24px, 8vh, 80px));
+    }
+    @media (max-height: 560px) {
+      .upload-home { padding-bottom: 2rem; }
+    }
+    .home-title {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 32px;
+      font-weight: 600;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
     }
     ul, ol { padding-inline-start: 0; }
     /* Unified flat button: higher specificity so we override CM and others */
-    #app button:not(.settings-overlay-backdrop),
+    #app button:not(.settings-overlay-backdrop):not(:where(.dependency-item, .part-path, .dependency-trigger, .cm-part-link-target, .cm-revert-change)),
     #app .app-button,
     #app .cm-button,
-    #app main button:not(.settings-overlay-backdrop) {
+    #app main button:not(.settings-overlay-backdrop):not(:where(.dependency-item, .part-path, .dependency-trigger, .cm-part-link-target, .cm-revert-change)) {
       box-shadow: none !important;
       background-image: none !important;
       background-color: var(--color-bg-secondary) !important;
@@ -265,12 +415,12 @@
       font: inherit;
       cursor: pointer;
     }
-    #app button:not(.settings-overlay-backdrop):hover,
+    #app button:not(.settings-overlay-backdrop):not(:where(.dependency-item, .part-path, .dependency-trigger, .cm-part-link-target, .cm-revert-change)):hover,
     #app .app-button:hover,
     #app .cm-button:hover {
       background-color: var(--color-bg-hover) !important;
     }
-    #app button:not(.settings-overlay-backdrop):active,
+    #app button:not(.settings-overlay-backdrop):not(:where(.dependency-item, .part-path, .dependency-trigger, .cm-part-link-target, .cm-revert-change)):active,
     #app .app-button:active,
     #app .cm-button:active {
       background-color: var(--color-bg-hover) !important;
@@ -278,6 +428,29 @@
     #app button:disabled {
       opacity: 0.6;
       cursor: not-allowed;
+    }
+    #app main button.toolbar-utility,
+    #app main a.toolbar-utility {
+      background-color: transparent !important;
+      border-color: transparent !important;
+    }
+    #app main .toolbar-utility:hover,
+    #app main .toolbar-utility:active {
+      background-color: var(--color-bg-hover) !important;
+    }
+    #app main button.inline-diff-toggle[aria-pressed="true"] {
+      background-color: var(--color-bg-element) !important;
+      color: var(--color-text-primary) !important;
+    }
+    #app main button.toolbar-download.has-changes {
+      background-color: #1f1e1b !important;
+      border-color: #1f1e1b !important;
+      color: var(--color-bg-white) !important;
+    }
+    #app main button.toolbar-download.has-changes:hover,
+    #app main button.toolbar-download.has-changes:active {
+      background-color: #3b3933 !important;
+      border-color: #3b3933 !important;
     }
     * {
       scrollbar-width: none;
@@ -309,51 +482,56 @@
   class="hidden"
 />
 
-<main class="relative m-0 p-0 min-h-screen h-full flex flex-col bg-bg-base" class:select-none={dragging}>
+<main class="relative m-0 p-0 min-h-screen h-full flex flex-col bg-bg-base" class:select-none={dragging || !hasFile}>
+  {#if discardResolver}
+    <DiscardChangesDialog onResolve={resolveDiscard} />
+  {/if}
   {#if !hasFile}
     <div class="absolute top-3 right-3">
       <GitHubLink />
     </div>
-    <section class="flex-1 flex flex-col items-center justify-center p-8 box-border bg-bg-base">
-      <DropZone on:drop={onDrop} on:click={openFileInput} />
+    <section class="upload-home flex-1 flex flex-col items-center justify-center p-8 box-border bg-bg-base">
+      <div class="w-full max-w-[440px] text-center">
+        <div class="mb-8 flex flex-col items-center">
+          <img src={`${import.meta.env.BASE_URL}logo.svg`} width="56" height="56" alt="" draggable="false" class="mb-5" />
+          <h1 class="home-title m-0 text-text-primary">OOXML Viewer</h1>
+          <p class="mt-3 mb-0 text-sm leading-relaxed text-text-secondary">Explore and edit the structure of Office files.</p>
+        </div>
+        <DropZone dragging={homeDragging} on:click={openFileInput} />
+        <p class="mt-4 mb-0 text-xs text-text-secondary">Files stay in your browser.</p>
+      </div>
+      {#if loading}
+        <p class="mt-4 text-sm text-text-secondary" role="status">Reading file…</p>
+      {/if}
       {#if error}
         <p class="mt-4 text-red-600 text-sm">{error}</p>
       {/if}
     </section>
   {:else}
     <header class="shrink-0 flex items-center justify-between gap-3 px-3 py-3 border-b border-border-base bg-bg-base">
-      <span class="min-w-0 pl-2 font-semibold text-text-primary truncate text-base">{fileName}</span>
-      <div class="shrink-0 flex items-center gap-2">
-        {#if false}
-          <button
-            class="h-9 px-4 text-sm font-medium"
-            class:bg-bg-element={showRelsGraph}
-            on:click={() => (showRelsGraph = !showRelsGraph)}
-          >
-            Rels
-          </button>
+      <div class="min-w-0 pl-2 flex flex-col gap-0.5">
+        <span class="font-mono font-medium text-text-primary truncate text-sm" title={fileName}>{fileName}</span>
+        {#if hasUnexportedChanges}
+          <span class="text-xs text-primary truncate" role="status" title="Download a copy to export your changes">Unexported changes · {modifiedPaths.size}</span>
         {/if}
-        <button class="hero-transition h-9 px-4 text-sm font-medium inline-flex items-center gap-2" on:click={newFile}>
-          <span class="i-tabler-plus w-5 h-5 shrink-0" aria-hidden="true"></span>
-          New
-        </button>
-        <button
-          class="h-9 px-4 text-sm font-medium inline-flex items-center gap-2"
-          disabled={saving}
-          on:click={save}
-        >
-          <span class="i-tabler-download w-5 h-5 shrink-0" aria-hidden="true"></span>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          class="h-9 w-9 p-0 inline-flex items-center justify-center shrink-0"
-          aria-label="Settings"
-          on:click={() => (showSettingsPanel = true)}
-        >
-          <span class="i-tabler-settings w-5 h-5 text-text-secondary" aria-hidden="true"></span>
-        </button>
-        <GitHubLink />
+      </div>
+      <div class="shrink-0 flex items-center gap-3">
+        <div class="flex items-center gap-1.5" role="group" aria-label="File actions">
+          <button
+            class="toolbar-download h-9 px-3 text-sm font-medium inline-flex items-center gap-2"
+            class:has-changes={hasUnexportedChanges}
+            title={`Download (${saveShortcutLabel})`}
+            aria-keyshortcuts={saveShortcutLabel === '⌘S' ? 'Meta+S' : 'Control+S'}
+            disabled={saving || loading}
+            on:click={save}
+          >
+            <span class="i-tabler-download w-5 h-5 shrink-0" aria-hidden="true"></span>
+            {saving ? 'Preparing…' : 'Download'}
+          </button>
+          <button class="toolbar-utility hero-transition h-9 w-9 p-0 text-sm inline-flex items-center justify-center" title="Close file" aria-label="Close file" disabled={loading || saving} on:click={newFile}>
+            <span class="i-tabler-x w-5 h-5" aria-hidden="true"></span>
+          </button>
+        </div>
       </div>
     </header>
     <SettingsPanel
@@ -366,17 +544,34 @@
         {error}
       </p>
     {/if}
+    {#if notice || loading}
+      <p class="shrink-0 py-2 px-5 m-0 bg-bg-secondary text-text-secondary text-xs" role="status">{loading ? 'Reading file…' : notice}</p>
+    {/if}
     <div class="flex-1 flex min-h-0 overflow-hidden bg-bg-base">
       <div
         class="flex flex-col h-full shrink-0 border-r border-border-base bg-bg-base overflow-hidden"
         style="width: {sidebarWidth}px"
       >
         <FileTree
+          bind:this={fileTree}
           entries={entries}
           selectedPath={selectedPath}
           fileName={fileName}
+          {modifiedPaths}
           on:select={onFileSelect}
-        />
+        >
+          <div slot="footer" class="shrink-0 flex items-center h-12 box-border px-3 border-t border-border-base">
+            <button
+              type="button"
+              class="toolbar-utility h-9 w-9 p-0 inline-flex items-center justify-center"
+              aria-label="Settings"
+              title="Settings"
+              on:click={() => (showSettingsPanel = true)}
+            >
+              <span class="i-tabler-settings w-5 h-5" aria-hidden="true"></span>
+            </button>
+          </div>
+        </FileTree>
       </div>
       <div
         class="sidebar-resize-handle shrink-0 cursor-col-resize transition-all duration-150 select-none"
@@ -394,17 +589,33 @@
             path={selectedPath}
             previewUrl={currentEntry.previewUrl}
             dependencies={currentDependencies}
+            referencedBy={currentReferencedBy}
             on:selectPath={onFileSelect}
+            on:revealPath={onRevealPath}
+          />
+        {:else if currentEntry?.isBinary && selectedPath}
+          <BinaryPreview
+            path={selectedPath}
+            dependencies={currentDependencies}
+            referencedBy={currentReferencedBy}
+            on:selectPath={onFileSelect}
+            on:revealPath={onRevealPath}
           />
         {:else}
           <XmlEditor
             path={selectedPath}
             content={editorContent}
+            {searchSession}
+            baselineContent={exportedContents.get(selectedPath ?? '') ?? editorContent}
             readOnly={currentEntry?.isBinary ?? true}
             dependencies={currentDependencies}
+            referencedBy={currentReferencedBy}
+            {packagePaths}
+            {relationshipTargets}
             autoCollapseTags={parseAutoCollapseTags(settingsSnapshot.autoCollapseTags)}
             on:contentChange={onContentChange}
             on:selectPath={onFileSelect}
+            on:revealPath={onRevealPath}
           />
         {/if}
       {/key}

@@ -1,6 +1,7 @@
 import { defineConfig, presetUno, presetIcons } from 'unocss';
 
 export default defineConfig({
+  safelist: ['i-tabler-arrow-back-up'],
   presets: [
     presetUno(), // 默认预设，提供所有工具类
     presetIcons({
@@ -19,24 +20,24 @@ export default defineConfig({
     },
     colors: {
       // 主题色
-      primary: '#fe8600',
-      'primary-light': '#fff9f5',
+      primary: '#a45c40',
+      'primary-light': '#f3e8e1',
 
       // 背景色 (4个层级：主背景 -> 次级背景 -> 元素背景 -> 交互状态)
-      'bg-base': '#f7f7f4',        // 主背景
-      'bg-secondary': '#fafafa',    // 次级背景（面板、header）
+      'bg-base': '#f5f3ee',        // 主背景
+      'bg-secondary': '#faf9f6',    // 次级背景（面板、header）
       'bg-white': '#ffffff',        // 白色（卡片、输入框）
-      'bg-element': '#eeeee9',      // 元素背景（标签、按钮）
-      'bg-hover': '#e0e0e0',        // hover/active 统一状态
+      'bg-element': '#eeece5',      // 元素背景（标签、按钮）
+      'bg-hover': '#e6e3db',        // hover/active 统一状态
 
       // 边框色 (2个层级)
-      'border-base': '#e5e5e0',     // 主边框
-      'border-hover': '#d0d0cc',    // hover 边框
+      'border-base': '#e3e0d8',     // 主边框
+      'border-hover': '#ccc7bc',    // hover 边框
 
       // 文本色 (3个层级 + 特殊场景)
-      'text-primary': '#26251e',    // 主要文本
-      'text-secondary': '#7a7974',  // 次要文本（说明、标签）
-      'text-muted': '#999999',      // 弱化文本（提示）
+      'text-primary': '#30302c',    // 主要文本
+      'text-secondary': '#706d65',  // 次要文本（说明、标签）
+      'text-muted': '#9a958b',      // 弱化文本（提示）
     },
   },
   preflights: [
@@ -44,26 +45,27 @@ export default defineConfig({
       getCSS: () => `
         :root {
           /* 主题色 */
-          --color-primary: #fe8600;
-          --color-primary-light: #fff9f5;
-          --color-primary-hover-light: rgba(254, 134, 0, 0.4);
-          --color-primary-active: rgba(254, 134, 0, 0.6);
+          --color-primary: #a45c40;
+          --color-primary-light: #f3e8e1;
+          --color-primary-hover: #88492f;
+          --color-primary-hover-light: rgba(164, 92, 64, 0.18);
+          --color-primary-active: rgba(164, 92, 64, 0.3);
 
           /* 背景色 (4个层级：主背景 -> 次级背景 -> 元素背景 -> 交互状态) */
-          --color-bg-base: #f7f7f4;
-          --color-bg-secondary: #fafafa;
+          --color-bg-base: #f5f3ee;
+          --color-bg-secondary: #faf9f6;
           --color-bg-white: #ffffff;
-          --color-bg-element: #eeeee9;
-          --color-bg-hover: #e0e0e0;
+          --color-bg-element: #eeece5;
+          --color-bg-hover: #e6e3db;
 
           /* 边框色 (2个层级) */
-          --color-border-base: #e5e5e0;
-          --color-border-hover: #d0d0cc;
+          --color-border-base: #e3e0d8;
+          --color-border-hover: #ccc7bc;
 
           /* 文本色 (3个层级 + 特殊场景) */
-          --color-text-primary: #26251e;
-          --color-text-secondary: #7a7974;
-          --color-text-muted: #999999;
+          --color-text-primary: #30302c;
+          --color-text-secondary: #706d65;
+          --color-text-muted: #9a958b;
 
           /* 滚动条色 (复用其他颜色) */
           --color-scrollbar-thumb: #c0c0c0;

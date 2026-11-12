@@ -80,7 +80,7 @@ export default defineConfig({
     },
   ],
   optimizeDeps: {
-    exclude: ['svelte-codemirror-editor', '@codemirror/view', '@codemirror/state', '@codemirror/lang-xml'],
+    exclude: ['svelte-codemirror-editor', '@codemirror/view', '@codemirror/state', '@codemirror/lang-xml', '@codemirror/commands', '@codemirror/merge'],
   },
   server: {
     port: 8800,

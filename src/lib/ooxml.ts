@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { isSupportedOfficeFile } from './constants';
 
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|bmp|emf|wmf|tiff?|webp)$/i;
 
@@ -39,6 +40,7 @@ export async function loadOfficeFile(file: File): Promise<{
   zip: JSZip;
   fileName: string;
 }> {
+  if (!isSupportedOfficeFile(file.name)) throw new Error('Unsupported OOXML file type.');
   const arrayBuffer = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(arrayBuffer);
   const fileName = file.name;

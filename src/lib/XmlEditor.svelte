@@ -1,9 +1,15 @@
 <script lang="ts">
+  import DiscardChangesDialog from './DiscardChangesDialog.svelte';
+  import { validateXml, type XmlIssue } from './xmlValidation';
   import EmptyFileState from './EmptyFileState.svelte';
   import { onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { EditorView, lineNumbers, keymap, ViewPlugin } from '@codemirror/view';
-  import { EditorState } from '@codemirror/state';
+  import { inlineDiffEnabled, setInlineDiffEnabled } from './diffPreference';
+  import { changeNavigation, navigateChange } from './diffNavigation';
+  import { inlineDiff } from './inlineDiff';
+  import { Compartment, EditorState } from '@codemirror/state';
+  import { history, historyKeymap } from '@codemirror/commands';
   import {
     syntaxHighlighting,
     defaultHighlightStyle,
@@ -11,17 +17,21 @@
     foldKeymap,
     indentUnit,
     foldEffect,
+    foldedRanges,
+    unfoldEffect,
     syntaxTree,
   } from '@codemirror/language';
-  import { search, searchKeymap, openSearchPanel } from '@codemirror/search';
+  import { search, searchKeymap, openSearchPanel, getSearchQuery, setSearchQuery, searchPanelOpen } from '@codemirror/search';
   import { xml } from '@codemirror/lang-xml';
+  import { createEditorSearchSession, type EditorSearchSession } from './editorSearch';
   import { openSearchStore } from './shortcuts';
   import format from 'xml-formatter';
-  import Popover from './Popover.svelte';
+  import { xmlLinks } from './xmlLinks';
+  import PartToolbar from './PartToolbar.svelte';
 
-  const dispatch = createEventDispatcher<{ contentChange: { value: string }; selectPath: { path: string } }>();
+  const dispatch = createEventDispatcher<{ contentChange: { value: string; initial?: boolean }; selectPath: { path: string } }>();
 
-  const FORMAT_OPTIONS = { indentation: '  ', collapseContent: true };
+  const FORMAT_OPTIONS = { indentation: '  ', collapseContent: true, lineSeparator: '\n' };
 
   function formatContent(raw: string): string {
     try {
@@ -33,35 +43,77 @@
 
   export let path: string | null = null;
   export let content: string = '';
+  export let baselineContent: string = '';
+  export let searchSession: EditorSearchSession = createEditorSearchSession();
+  let editedContent = content;
+  const diffCompartment = new Compartment();
+  let appliedDiffBaseline: string | null = null;
+  let appliedDiffEnabled = false;
+  let showRevertFile = false;
+  let xmlIssue: XmlIssue | null = null;
+  let validationTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function scheduleValidation(value: string) {
+    clearTimeout(validationTimer);
+    if (readOnly || !path || !/\.(xml|rels|vml)$/i.test(path)) { xmlIssue = null; return; }
+    xmlIssue = null;
+    validationTimer = setTimeout(() => { xmlIssue = validateXml(value); }, 450);
+  }
+
+  function revealXmlIssue() {
+    if (!editorView || !xmlIssue) return;
+    const view = editorView;
+    const line = view.state.doc.line(Math.min(xmlIssue.line ?? 1, view.state.doc.lines));
+    const position = Math.min(line.to, line.from + (xmlIssue.column ?? 1) - 1);
+    const effects = [EditorView.scrollIntoView(position, { y: 'center' })];
+    foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => {
+      if (from <= position && position <= to) effects.push(unfoldEffect.of({ from, to }));
+    });
+    view.dispatch({ selection: { anchor: position }, effects });
+    view.focus();
+  }
+
+  function resolveRevertFile(confirmed: boolean) {
+    showRevertFile = false;
+    if (!confirmed || !editorView) return;
+    editorView.dispatch({
+      changes: { from: 0, to: editorView.state.doc.length, insert: baselineContent },
+      selection: { anchor: 0 },
+      userEvent: 'revert',
+      scrollIntoView: true,
+    });
+    editorView.focus();
+  }
+
+  let changeCount = 0;
+  let activeChange = -1;
+
+  function updateChangeNavigation(state: EditorState) {
+    const { chunks, active } = changeNavigation(state);
+    changeCount = chunks.length;
+    activeChange = active;
+  }
+
+  function goToChange(direction: -1 | 1) {
+    if (editorView) navigateChange(editorView, direction);
+  }
+  $: hasChanges = editedContent !== baselineContent;
+
+  function syncDiff(original: string, enabled: boolean) {
+    if (!editorView || (original === appliedDiffBaseline && enabled === appliedDiffEnabled)) return;
+    appliedDiffBaseline = original;
+    appliedDiffEnabled = enabled;
+    editorView.dispatch({ effects: diffCompartment.reconfigure(enabled ? inlineDiff(original) : []) });
+  }
+
+  $: if (editorView) syncDiff(baselineContent, $inlineDiffEnabled && !readOnly);
   export let readOnly: boolean = false;
   export let dependencies: string[] = [];
+  export let referencedBy: string[] = [];
+  export let packagePaths: Set<string> = new Set();
+  export let relationshipTargets: Map<string, string> = new Map();
   /** Tag names to auto-fold when opening a file (e.g. ['w:p', 'w:t']). */
   export let autoCollapseTags: string[] = [];
-
-  const DEPENDS_INLINE_MAX = 2;
-  let popoverVisible = false;
-  let popoverHover = false;
-  let hidePopoverTimeout: ReturnType<typeof setTimeout> | null = null;
-  let popoverAnchor: HTMLButtonElement | null = null;
-
-  function showPopover() {
-    if (hidePopoverTimeout) clearTimeout(hidePopoverTimeout);
-    hidePopoverTimeout = null;
-    popoverVisible = true;
-  }
-  function scheduleHidePopover() {
-    if (popoverHover) return;
-    hidePopoverTimeout = setTimeout(() => (popoverVisible = false), 300);
-  }
-  function onPopoverMouseEnter() {
-    popoverHover = true;
-    if (hidePopoverTimeout) clearTimeout(hidePopoverTimeout);
-    hidePopoverTimeout = null;
-  }
-  function onPopoverMouseLeave() {
-    popoverHover = false;
-    scheduleHidePopover();
-  }
 
   /** Create a ViewPlugin that applies auto-collapse when syntax tree is ready. */
   function createAutoCollapseExtension(tagSet: Set<string>) {
@@ -184,15 +236,24 @@
           return marker;
         },
       }),
-      keymap.of([...foldKeymap, ...searchKeymap]),
+      history(),
+      diffCompartment.of([]),
+      keymap.of([...historyKeymap, ...foldKeymap, ...searchKeymap]),
       search(),
       xml(),
+      xmlLinks(() => ({ path: path ?? '', paths: packagePaths, targets: relationshipTargets }),
+        target => dispatch('selectPath', { path: target })),
       syntaxHighlighting(defaultHighlightStyle),
       indentUnit.of('  '),
       EditorView.lineWrapping,
       EditorView.editable.of(!readOnly),
       EditorView.updateListener.of((update) => {
+        updateChangeNavigation(update.state);
+        searchSession.open = searchPanelOpen(update.state);
+        searchSession.query = getSearchQuery(update.state);
         if (update.docChanged) {
+          editedContent = update.state.doc.toString();
+          scheduleValidation(editedContent);
           dispatch('contentChange', { value: update.state.doc.toString() });
         }
       }),
@@ -302,10 +363,12 @@
         '.cm-search input[type="checkbox"]': {
           accentColor: 'var(--color-primary)',
         },
-        '.cm-searchMatch': { backgroundColor: 'rgba(254, 134, 0, 0.2)' },
-        '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'rgba(254, 134, 0, 0.35)' },
+        '.cm-searchMatch': { backgroundColor: 'rgba(164, 92, 64, 0.12)' },
+        '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'rgba(164, 92, 64, 0.24)' },
       }),
     ];
+    const savedSearch = { ...searchSession };
+    const previousFocus = document.activeElement;
     const state = EditorState.create({
       doc: initialContent,
       extensions,
@@ -314,16 +377,27 @@
       state,
       parent: editorContainer,
     });
+    editorView.dispatch({ effects: setSearchQuery.of(savedSearch.query) });
+    if (savedSearch.open) {
+      openSearchPanel(editorView);
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected && previousFocus !== document.body) {
+        previousFocus.focus({ preventScroll: true });
+      }
+    }
+    editedContent = initialContent;
+    scheduleValidation(initialContent);
     if (initialContent !== content) {
-      dispatch('contentChange', { value: initialContent });
+      dispatch('contentChange', { value: initialContent, initial: true });
     }
   }
 
   $: if (editorView) {
-    openSearchStore.set(() => openSearchPanel(editorView));
+    const view = editorView;
+    openSearchStore.set(() => openSearchPanel(view));
   }
 
   onDestroy(() => {
+    clearTimeout(validationTimer);
     openSearchStore.set(null);
     if (editorView) {
       editorView.destroy();
@@ -348,39 +422,11 @@
 
 <div class="flex flex-col flex-1 min-w-0 overflow-hidden bg-white rounded-l-lg border border-border-base border-l-0">
   {#if path}
-    <div class="shrink-0 flex items-center h-10 box-border gap-2 px-3 text-xs border-b border-border-base bg-bg-secondary">
-      <span class="truncate shrink-0 text-text-secondary max-w-64" title={path}>{path}</span>
-      <div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
-        {#if dependencies.length > 0}
-          <span class="text-text-secondary shrink-0">Depends on:</span>
-          {#each dependencies.slice(0, DEPENDS_INLINE_MAX) as dep}
-            <button
-              type="button"
-              class="dep-btn px-1 py-0.5 rounded bg-bg-element text-text-primary hover:bg-bg-hover shrink-0 whitespace-nowrap"
-              title={dep}
-              on:click={() => dispatch('selectPath', { path: dep })}
-            >
-              {dep.split('/').pop() ?? dep}
-            </button>
-          {/each}
-          {#if dependencies.length > DEPENDS_INLINE_MAX}
-            <button
-              bind:this={popoverAnchor}
-              type="button"
-              class="dep-btn px-1 py-0.5 rounded bg-bg-element text-text-primary hover:bg-bg-hover inline-flex items-center justify-center shrink-0"
-              title="Show all"
-              on:mouseenter={showPopover}
-              on:mouseleave={scheduleHidePopover}
-            >
-              <span class="i-tabler-dots w-3.5 h-3.5" aria-hidden="true"></span>
-            </button>
-          {/if}
-        {/if}
-      </div>
+    <PartToolbar {path} {dependencies} {referencedBy} on:selectPath on:revealPath>
       {#if !readOnly}
         <button
           type="button"
-          class="shrink-0 p-1.5 inline-flex items-center justify-center"
+          class="shrink-0 h-7 w-7 box-border p-0 inline-flex items-center justify-center"
           title="Format"
           aria-label="Format"
           on:click={formatXml}
@@ -388,38 +434,102 @@
           <span class="i-tabler-code w-4 h-4" aria-hidden="true"></span>
         </button>
       {/if}
-    </div>
+    </PartToolbar>
     <div
       class="flex-1 min-h-0 min-w-0 overflow-hidden font-mono text-text-primary codemirror-wrapper"
       bind:this={editorContainer}
       data-path={path}
     ></div>
+        {#if !readOnly && (hasChanges || xmlIssue)}
+        <div class="diff-status-bar" role="group" aria-label="Editor status">
+          <div class="status-actions">
+          {#if hasChanges}
+          <button
+            type="button"
+            class="toolbar-utility inline-diff-toggle shrink-0 h-7 px-2 py-0 inline-flex items-center gap-1.5"
+            aria-label="Show inline diff"
+            aria-pressed={$inlineDiffEnabled}
+            title={$inlineDiffEnabled ? 'Hide inline diff' : 'Show inline diff'}
+            on:click={() => setInlineDiffEnabled(!$inlineDiffEnabled)}
+          >
+            <span class="i-tabler-git-compare w-3.5 h-3.5" aria-hidden="true"></span>
+            Diff
+          </button>
+          {/if}
+          {#if xmlIssue}
+            <button type="button" class="toolbar-utility xml-error h-7 px-2 py-0" title={xmlIssue.message} aria-label="Locate XML error" on:click={revealXmlIssue}>
+              Invalid XML{xmlIssue.line ? ` · Ln ${xmlIssue.line}${xmlIssue.column ? `:${xmlIssue.column}` : ''}` : ''}
+            </button>
+          {/if}
+          </div>
+          <div class="status-actions">
+          {#if hasChanges && $inlineDiffEnabled && changeCount > 0}
+            <div class="change-navigation" role="group" aria-label="Change navigation">
+              <span class="change-position" aria-live="polite" title={`${changeCount} changed blocks in this file`}>
+                {activeChange >= 0 ? `Change ${activeChange + 1} of ${changeCount}` : `Changes · ${changeCount}`}
+              </span>
+              <button type="button" class="toolbar-utility h-7 w-7 p-0 inline-flex items-center justify-center" title="Previous change" aria-label="Previous change" on:click={() => goToChange(-1)}>
+                <span class="i-tabler-arrow-up w-3.5 h-3.5" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="toolbar-utility h-7 w-7 p-0 inline-flex items-center justify-center" title="Next change" aria-label="Next change" on:click={() => goToChange(1)}>
+                <span class="i-tabler-arrow-down w-3.5 h-3.5" aria-hidden="true"></span>
+              </button>
+            </div>
+          {/if}
+          {#if hasChanges}
+            <button type="button" class="toolbar-utility h-7 w-7 p-0 inline-flex items-center justify-center" title="Revert current file" aria-label="Revert current file" on:click={() => { showRevertFile = true; }}>
+              <span class="i-tabler-arrow-back-up w-3.5 h-3.5" aria-hidden="true"></span>
+            </button>
+          {/if}
+          </div>
+        </div>
+        {/if}
   {:else}
     <EmptyFileState />
   {/if}
 </div>
 
-<Popover
-  visible={popoverVisible}
-  anchor={popoverAnchor}
-  on:mouseenter={onPopoverMouseEnter}
-  on:mouseleave={onPopoverMouseLeave}
->
-<div class="flex flex-col gap-2">
-  {#each dependencies as dep}
-    <button
-      type="button"
-      class="dep-btn block w-full text-left px-1.5 py-1 rounded bg-[#eeeee9] hover:bg-bg-hover text-text-primary truncate"
-      title={dep}
-      on:click={() => dispatch('selectPath', { path: dep })}
-    >
-      {dep}
-    </button>
-  {/each}
-</div>
-</Popover>
+{#if showRevertFile}
+  <DiscardChangesDialog
+    title="Revert current file?"
+    description={`Restore ${path} to its last export baseline? Other files are unaffected. You can undo this with Cmd/Ctrl + Z.`}
+    confirmLabel="Revert file"
+    onResolve={resolveRevertFile}
+  />
+{/if}
 
 <style>
+  .status-actions { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+  .xml-error { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :global(#app main button.xml-error) { color: #a33d32 !important; }
+
+  .diff-status-bar {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    height: 28px;
+    box-sizing: border-box;
+    padding: 0 8px;
+    border-top: 1px solid var(--color-border-base);
+    background: var(--color-bg-secondary);
+    font-size: 11px;
+  }
+  .change-navigation {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 2px;
+    height: 28px;
+  }
+  .change-position {
+    padding: 0 4px;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
   .codemirror-wrapper :global(.cm-editor) {
     height: 100%;
     min-height: 100%;

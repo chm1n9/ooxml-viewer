@@ -1,5 +1,6 @@
 <script lang="ts">
   import { loadSettings, saveSettings, type ViewerSettings } from './settings';
+  import GitHubLink from './GitHubLink.svelte';
 
   export let visible = false;
   export let onClose: (() => void) = () => {};
@@ -65,6 +66,7 @@
         </label>
       </div>
       <div class="settings-footer">
+        <GitHubLink subtle />
         <button type="button" class="settings-btn-primary" on:click={handleClose}>
           Done
         </button>
@@ -175,7 +177,8 @@
   .settings-footer {
     padding: 12px 20px 20px;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
   }
   .settings-btn-primary {
     padding: 8px 16px;
