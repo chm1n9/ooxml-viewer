@@ -1,0 +1,36 @@
+README.md
+  s_34966ce520a2de::t_aad2b112cb6829 7
+src/lib/sourceFile.ts
+  s_34966ce520a2de::t_fe07367f7dceac 136-139
+  s_34966ce520a2de::t_aad2b112cb6829 6,10,26-27,39,41,46-135,140-151
+  s_34966ce520a2de::t_f15cde38da8ecf 3-5
+  s_34966ce520a2de::t_6110861fbb8d68 7-9
+  s_34966ce520a2de::t_83aded0df8bbdf 11-13,23-25
+  s_34966ce520a2de::t_efca24e70bf3c3 28-30,36-38
+  s_34966ce520a2de::t_2216e63978bdfc 40
+  s_34966ce520a2de::t_c5a91fed72bbdc 42-45
+  s_34966ce520a2de::t_fba80dbe42d767 1-2,14-22,31-35
+src/App.svelte
+  s_34966ce520a2de::t_c6b106589dfa03 231-237,297,328,382,391-392,401,411,424,437-438,486-490,532,535-556,685,687-701
+  s_34966ce520a2de::t_b178777926e739 139,533-534,557
+  s_34966ce520a2de::t_32f131256be154 34-136,140,145
+  s_34966ce520a2de::t_b6dd8823ce479a 3,30-33,137-138,141-144,193-194,197-199,651-658,761,783-784
+src/lib/XmlEditor.svelte
+  s_34966ce520a2de::t_e2b9abb2ceec24 46-51,393-402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "940f376b2d4c2d4f5db4eda1d5a9a673b68224f1",
+  "prompts": {},
+  "sessions": {
+    "s_34966ce520a2de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cd9d-69f2-7603-877d-f317e30c426b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "miles.cheng <miles.cheng@zoom.us>"
+    }
+  }
+}
