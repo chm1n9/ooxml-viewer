@@ -79,8 +79,8 @@
       </div>
       <div class="settings-footer">
         <div class="settings-about">
-          <span class="settings-version" aria-label={`Version ${version}`}>v{version}</span>
           <GitHubLink subtle />
+          <span class="settings-version" aria-label={`Version ${version}`}>v{version}</span>
         </div>
         <button type="button" class="app-button settings-btn-primary" on:click={handleSave}>
           Save

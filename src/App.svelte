@@ -10,7 +10,6 @@
   import BinaryPreview from './lib/BinaryPreview.svelte';
   import ImagePreview from './lib/ImagePreview.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
-  import GitHubLink from './lib/GitHubLink.svelte';
   import DiscardChangesDialog from './lib/DiscardChangesDialog.svelte';
   import { createEditorSearchSession } from './lib/editorSearch';
   import { initShortcuts } from './lib/shortcuts';
@@ -595,9 +594,16 @@
   {#if discardResolver}
     <DiscardChangesDialog onResolve={resolveDiscard} />
   {/if}
+  <SettingsPanel
+    visible={showSettingsPanel}
+    onClose={() => (showSettingsPanel = false)}
+    onSave={(settings) => { settingsSnapshot = settings; }}
+  />
   {#if !hasFile}
-    <div class="absolute top-3 right-3">
-      <GitHubLink />
+    <div class="absolute bottom-0 left-0 z-10 flex items-center h-12 box-border px-3">
+      <button type="button" class="toolbar-utility h-9 w-9 p-0 inline-flex items-center justify-center" aria-label="Settings" title="Settings" on:click={() => (showSettingsPanel = true)}>
+        <span class="i-tabler-settings w-5 h-5" aria-hidden="true"></span>
+      </button>
     </div>
     <section class="upload-home flex-1 flex flex-col items-center justify-center p-8 box-border bg-bg-base">
       <div class="w-full max-w-[440px] text-center">
@@ -658,11 +664,6 @@
         </div>
       </div>
     </header>
-    <SettingsPanel
-      visible={showSettingsPanel}
-      onClose={() => (showSettingsPanel = false)}
-      onSave={(settings) => { settingsSnapshot = settings; }}
-    />
     <div class="flex-1 flex min-h-0 overflow-hidden bg-bg-base">
       <div
         class="flex flex-col h-full shrink-0 border-r border-border-base bg-bg-base overflow-hidden"
