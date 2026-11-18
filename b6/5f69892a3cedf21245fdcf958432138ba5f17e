@@ -1,0 +1,21 @@
+src/lib/SettingsPanel.svelte
+  s_34966ce520a2de::t_a4283ba006bbc9 83
+src/App.svelte
+  s_34966ce520a2de::t_3026e250a6565e 597-601,603-606
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b65f69892a3cedf21245fdcf958432138ba5f17e",
+  "prompts": {},
+  "sessions": {
+    "s_34966ce520a2de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cd9d-69f2-7603-877d-f317e30c426b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "miles.cheng <miles.cheng@zoom.us>"
+    }
+  }
+}
