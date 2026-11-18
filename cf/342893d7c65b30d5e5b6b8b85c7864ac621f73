@@ -1,0 +1,19 @@
+.github/workflows/deploy-pages.yml
+  s_34966ce520a2de::t_720ede49abd296 21,23,27,29,35-37,43,54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "cf342893d7c65b30d5e5b6b8b85c7864ac621f73",
+  "prompts": {},
+  "sessions": {
+    "s_34966ce520a2de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1cd9d-69f2-7603-877d-f317e30c426b",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "miles.cheng <miles.cheng@zoom.us>"
+    }
+  }
+}
