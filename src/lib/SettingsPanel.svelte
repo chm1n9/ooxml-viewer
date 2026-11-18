@@ -1,6 +1,7 @@
 <script lang="ts">
   import { loadSettings, saveSettings, type ViewerSettings } from './settings';
   import GitHubLink from './GitHubLink.svelte';
+  import { version } from '../../package.json';
 
   export let visible = false;
   export let onClose: (() => void) = () => {};
@@ -77,7 +78,10 @@
         {#if saveError}<p class="settings-hint" role="alert">{saveError}</p>{/if}
       </div>
       <div class="settings-footer">
-        <GitHubLink subtle />
+        <div class="settings-about">
+          <span class="settings-version" aria-label={`Version ${version}`}>v{version}</span>
+          <GitHubLink subtle />
+        </div>
         <button type="button" class="app-button settings-btn-primary" on:click={handleSave}>
           Save
         </button>
@@ -190,6 +194,16 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+  .settings-about {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .settings-version {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
   }
   .settings-btn-primary {
     padding: 8px 16px;
