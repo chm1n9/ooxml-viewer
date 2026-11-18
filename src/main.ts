@@ -1,5 +1,6 @@
 import "normalize.css/normalize.css";
 import "virtual:uno.css";
+import "./styles/buttons.css";
 import App from "./App.svelte";
 import { loadOfficeFile } from "./lib/ooxml";
 

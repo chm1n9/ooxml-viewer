@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
-import { isSupportedOfficeFile } from './constants';
+import { isTextPart, decodePart, encodePart } from './partContent.ts';
+import { isSupportedOfficeFile } from './constants.ts';
 
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|bmp|emf|wmf|tiff?|webp)$/i;
 
@@ -13,10 +14,6 @@ const IMAGE_MIME: Record<string, string> = {
   '.tiff': 'image/tiff',
   '.tif': 'image/tiff',
 };
-
-function isTextPath(name: string): boolean {
-  return /\.(xml|rels)$/i.test(name);
-}
 
 export function isImagePath(name: string): boolean {
   return IMAGE_EXTENSIONS.test(name);
@@ -49,11 +46,11 @@ export async function loadOfficeFile(file: File): Promise<{
   for (const [rawPath, zipEntry] of Object.entries(zip.files)) {
     if (zipEntry.dir) continue;
     const path = rawPath.replace(/\\/g, '/');
-    const isBinary = !isTextPath(path);
+    const isBinary = !isTextPart(path);
     let content = '';
     if (!isBinary) {
       try {
-        content = await zipEntry.async('string');
+        content = decodePart(await zipEntry.async('uint8array'));
       } catch {
         content = '[Unable to decode as text]';
       }
@@ -97,7 +94,7 @@ export async function repackAndDownload(
         );
       }
     } else {
-      newZip.file(entry.path, entry.content);
+      newZip.file(entry.path, encodePart(entry.content));
     }
   }
 

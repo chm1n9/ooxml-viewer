@@ -1,3 +1,5 @@
+import { isTextPart } from './partContent.ts';
+import type { SourceChange } from './sourceChanges';
 import type { FileEntry } from './ooxml';
 
 export interface TreeFile {
@@ -5,6 +7,7 @@ export interface TreeFile {
   name: string;
   path: string;
   isBinary: boolean;
+  sourceOnly?: boolean;
 }
 
 export interface TreeFolder {
@@ -17,7 +20,7 @@ export interface TreeFolder {
 export type TreeNode = TreeFile | TreeFolder;
 
 export function nodeId(n: TreeNode): string {
-  return n.type === 'file' ? n.path : n.key;
+  return n.type === 'file' ? `file:${n.path}` : `folder:${n.key}`;
 }
 
 function naturalCompare(a: string, b: string): number {
@@ -64,7 +67,7 @@ function sortNodes(nodes: TreeNode[]): void {
   });
 }
 
-export function buildFileTree(entries: FileEntry[]): TreeNode[] {
+export function buildFileTree(entries: (FileEntry & { sourceOnly?: boolean })[]): TreeNode[] {
   const root: TreeNode[] = [];
 
   for (const e of entries) {
@@ -90,6 +93,7 @@ export function buildFileTree(entries: FileEntry[]): TreeNode[] {
       name: fileName,
       path: e.path,
       isBinary: e.isBinary,
+      sourceOnly: e.sourceOnly,
     });
   }
 
@@ -107,4 +111,17 @@ export function getFolderKeysForPath(filePath: string): string[] {
     keys.push(parts.slice(0, i + 1).join('/'));
   }
   return keys;
+}
+
+
+/** Include source-only additions in the tree without adding them to editable/exported entries. */
+export function sourceTreeEntries(entries: FileEntry[], changes: SourceChange[]): (FileEntry & { sourceOnly?: boolean })[] {
+  const existing = new Set(entries.map(entry => entry.path));
+  return [...entries, ...changes.filter(change => !existing.has(change.path)).map(change => ({
+    path: change.path, content: '', isBinary: !isTextPart(change.path), sourceOnly: true,
+  }))];
+}
+
+export function sourceFolderKeys(changes: SourceChange[]): Set<string> {
+  return new Set(changes.flatMap(change => getFolderKeysForPath(change.path)));
 }

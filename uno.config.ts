@@ -1,7 +1,7 @@
 import { defineConfig, presetUno, presetIcons } from 'unocss';
 
 export default defineConfig({
-  safelist: ['i-tabler-arrow-back-up'],
+  safelist: ['i-tabler-arrow-back-up', 'i-tabler-chevron-left', 'i-tabler-replace', 'i-tabler-letter-case', 'i-tabler-abc', 'i-tabler-regex', 'i-tabler-replace-filled', 'i-tabler-layout-bottombar-expand', 'i-tabler-layout-bottombar-collapse'],
   presets: [
     presetUno(), // 默认预设，提供所有工具类
     presetIcons({

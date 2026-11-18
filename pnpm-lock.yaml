@@ -32,18 +32,12 @@ importers:
       '@codemirror/view':
         specifier: ^6.26.0
         version: 6.39.12
-      codemirror:
-        specifier: ^6.0.1
-        version: 6.0.2
       jszip:
         specifier: ^3.10.1
         version: 3.10.1
       normalize.css:
         specifier: ^8.0.1
         version: 8.0.1
-      svelte-codemirror-editor:
-        specifier: ^1.4.1
-        version: 1.4.2(codemirror@6.0.2)(svelte@4.2.20)
       xml-formatter:
         specifier: ^3.3.0
         version: 3.6.7
@@ -604,9 +598,6 @@ packages:
   code-red@1.0.4:
     resolution: {integrity: sha512-7qJWqItLA8/VPVlKJlFXU+NBlo/qyfs39aJcuMT/2ere32ZqvF5OSxgdM5xOfJJ7O429gg2HM47y8v9P+9wrNw==}
 
-  codemirror@6.0.2:
-    resolution: {integrity: sha512-VhydHotNW5w1UGK0Qj96BwSk/Zqbp9WbnyK2W/eVMv4QyF41INRGpjUhFJY7/uDNuudSc33a/PKr4iDqRduvHw==}
-
   colorette@2.0.20:
     resolution: {integrity: sha512-IfEDxwoWIjkeXL1eXcDiow4UbKjhLdq6/EuSVR9GMN7KVH3r9gQ83e73hsz1Nd1T3ijd5xv1wcWRYO+D6kCI2w==}
 
@@ -895,12 +886,6 @@ packages:
     peerDependencies:
       svelte: ^4.0.0 || ^5.0.0-next.0
       typescript: '>=5.0.0'
-
-  svelte-codemirror-editor@1.4.2:
-    resolution: {integrity: sha512-iBKa1a1boXa//BUmKPhpzZoWcZ+886/REKFPrS9ISfbcfmiaNv9uVk/0/+jqbWLa40Sk/utB/5AoS5VRWzTA8Q==}
-    peerDependencies:
-      codemirror: ^6.0.0
-      svelte: ^3.0.0 || ^4.0.0 || ^5.0.0
 
   svelte-hmr@0.16.0:
     resolution: {integrity: sha512-Gyc7cOS3VJzLlfj7wKS0ZnzDVdv3Pn2IuVeJPk9m2skfhcu5bq3wtIZyQGggr7/Iim5rH5cncyQft/kRLupcnA==}
@@ -1551,16 +1536,6 @@ snapshots:
       estree-walker: 3.0.3
       periscopic: 3.1.0
 
-  codemirror@6.0.2:
-    dependencies:
-      '@codemirror/autocomplete': 6.20.0
-      '@codemirror/commands': 6.10.2
-      '@codemirror/language': 6.12.1
-      '@codemirror/lint': 6.9.3
-      '@codemirror/search': 6.6.0
-      '@codemirror/state': 6.5.4
-      '@codemirror/view': 6.39.12
-
   colorette@2.0.20: {}
 
   confbox@0.1.8: {}
@@ -1874,11 +1849,6 @@ snapshots:
       typescript: 5.9.3
     transitivePeerDependencies:
       - picomatch
-
-  svelte-codemirror-editor@1.4.2(codemirror@6.0.2)(svelte@4.2.20):
-    dependencies:
-      codemirror: 6.0.2
-      svelte: 4.2.20
 
   svelte-hmr@0.16.0(svelte@4.2.20):
     dependencies:

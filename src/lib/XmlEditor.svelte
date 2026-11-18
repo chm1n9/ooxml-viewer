@@ -4,15 +4,14 @@
   import EmptyFileState from './EmptyFileState.svelte';
   import { onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { EditorView, lineNumbers, keymap, ViewPlugin } from '@codemirror/view';
+  import { editorPresentation, capturePosition, restorePosition, type EditorPosition } from './editorPresentation';
+  import { EditorView, keymap, ViewPlugin, type ViewUpdate } from '@codemirror/view';
   import { inlineDiffEnabled, setInlineDiffEnabled } from './diffPreference';
   import { changeNavigation, navigateChange } from './diffNavigation';
   import { inlineDiff } from './inlineDiff';
   import { Compartment, EditorState } from '@codemirror/state';
   import { history, historyKeymap } from '@codemirror/commands';
   import {
-    syntaxHighlighting,
-    defaultHighlightStyle,
     foldGutter,
     foldKeymap,
     indentUnit,
@@ -21,33 +20,31 @@
     unfoldEffect,
     syntaxTree,
   } from '@codemirror/language';
-  import { search, searchKeymap, openSearchPanel, getSearchQuery, setSearchQuery, searchPanelOpen } from '@codemirror/search';
-  import { xml } from '@codemirror/lang-xml';
+  import { searchKeymap, openSearchPanel, getSearchQuery, setSearchQuery, searchPanelOpen } from '@codemirror/search';
   import { createEditorSearchSession, type EditorSearchSession } from './editorSearch';
   import { openSearchStore } from './shortcuts';
-  import format from 'xml-formatter';
+  import { displayXml, isTextPart, formatXml as formatXmlContent } from './partContent';
   import { xmlLinks } from './xmlLinks';
   import PartToolbar from './PartToolbar.svelte';
 
   const dispatch = createEventDispatcher<{ contentChange: { value: string; initial?: boolean }; selectPath: { path: string } }>();
 
-  const FORMAT_OPTIONS = { indentation: '  ', collapseContent: true, lineSeparator: '\n' };
-
-  function formatContent(raw: string): string {
-    try {
-      return format(raw, FORMAT_OPTIONS);
-    } catch {
-      return raw;
-    }
-  }
-
   export let path: string | null = null;
   export let content: string = '';
-  export let restoreView: { top: number; left: number; anchor: number; head: number } | null = null;
+  export let active = true;
+  export function focusEditor(snapshot: EditorPosition | null = null) {
+    const view = editorView;
+    if (!view) return;
+    if (snapshot) {
+      restorePosition(view, snapshot, () => editorView === view);
+    }
+    view.requestMeasure();
+    view.focus();
+  }
+  export let restoreView: EditorPosition | null = null;
   export function captureView() {
     if (!editorView) return null;
-    const { anchor, head } = editorView.state.selection.main;
-    return { top: editorView.scrollDOM.scrollTop, left: editorView.scrollDOM.scrollLeft, anchor, head };
+    return capturePosition(editorView);
   }
   export let baselineContent: string = '';
   export let searchSession: EditorSearchSession = createEditorSearchSession();
@@ -61,7 +58,7 @@
 
   function scheduleValidation(value: string) {
     clearTimeout(validationTimer);
-    if (readOnly || !path || !/\.(xml|rels|vml)$/i.test(path)) { xmlIssue = null; return; }
+    if (readOnly || !path || !isTextPart(path)) { xmlIssue = null; return; }
     xmlIssue = null;
     validationTimer = setTimeout(() => { xmlIssue = validateXml(value); }, 450);
   }
@@ -126,8 +123,10 @@
     return ViewPlugin.fromClass(
       class {
         didFold = false;
+        timer: ReturnType<typeof setTimeout> | undefined;
+        destroy() { clearTimeout(this.timer); }
 
-        update(update: any) {
+        update(update: ViewUpdate) {
           // 已经折叠过，跳过
           if (this.didFold) return;
 
@@ -139,7 +138,7 @@
 
           // 延迟应用折叠，避免在更新过程中触发新的更新
           this.didFold = true;
-          setTimeout(() => {
+          this.timer = setTimeout(() => {
             applyAutoCollapseTags(update.view, tagSet);
           }, 0);
         }
@@ -210,7 +209,6 @@
       // 一次性应用所有折叠效果
       const effects = foldRanges.map(range => foldEffect.of({ from: range.from, to: range.to }));
       view.dispatch({ effects });
-      console.log(`Auto-collapsed ${effects.length} tags:`, foldRanges.map(r => r.tagName));
     }
 
     return foldRanges.length;
@@ -228,11 +226,10 @@
     lastPath = path;
   }
 
-  $: initialContent = content ? formatContent(content) : '';
-
   $: if (path && editorContainer && !editorView) {
+    const initialContent = displayXml(content);
     const extensions = [
-      lineNumbers(),
+      ...editorPresentation(searchSession),
       foldGutter({
         markerDOM: (open) => {
           const marker = document.createElement('span');
@@ -245,13 +242,9 @@
       history(),
       diffCompartment.of([]),
       keymap.of([...historyKeymap, ...foldKeymap, ...searchKeymap]),
-      search(),
-      xml(),
       xmlLinks(() => ({ path: path ?? '', paths: packagePaths, targets: relationshipTargets }),
         target => dispatch('selectPath', { path: target })),
-      syntaxHighlighting(defaultHighlightStyle),
       indentUnit.of('  '),
-      EditorView.lineWrapping,
       EditorView.editable.of(!readOnly),
       EditorView.updateListener.of((update) => {
         updateChangeNavigation(update.state);
@@ -265,113 +258,7 @@
       }),
       // 自动折叠标签的扩展
       ...(autoCollapseTags.length > 0 ? [createAutoCollapseExtension(new Set(autoCollapseTags))] : []),
-      EditorView.theme({
-        '&': { fontSize: '13px' },
-        '.cm-content': { fontFamily: 'inherit', padding: '1rem' },
-        '&.cm-focused': { outline: 'none' },
-        '.cm-gutters': { borderRight: '1px solid var(--color-border-base)', backgroundColor: 'var(--color-bg-secondary)' },
-        '.cm-lineNumbers': { minWidth: 'calc(4ch + 16px)' },
-        '.cm-lineNumbers .cm-gutterElement': { paddingLeft: '8px', color: 'var(--color-text-secondary)' },
-        '.cm-foldGutter .cm-gutterElement': {
-          padding: '0 4px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        '.cm-foldGutter .cm-gutterElement span': {
-          width: '14px',
-          height: '14px',
-          display: 'inline-block',
-          color: 'var(--color-text-secondary)',
-        },
-        '.cm-foldGutter .cm-gutterElement:hover span': {
-          color: 'var(--color-primary)',
-        },
-        /* Search panel: match app style */
-        '.cm-panel': {
-          backgroundColor: 'var(--color-bg-secondary)',
-          borderTop: '1px solid var(--color-border-base)',
-          padding: '8px 12px',
-          fontFamily: 'inherit',
-          fontSize: '13px',
-        },
-        '.cm-search': {
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: '8px',
-        },
-        '.cm-search .cm-textfield': {
-          padding: '6px 10px',
-          border: '1px solid var(--color-border-base)',
-          borderRadius: '6px',
-          backgroundColor: 'var(--color-bg-white)',
-          color: 'var(--color-text-primary)',
-          fontSize: '13px',
-        },
-        '.cm-search .cm-textfield::placeholder': { color: 'var(--color-text-secondary)' },
-        /* Flat button via CodeMirror theme (no reliance on global specificity) */
-        '.cm-search .cm-button': {
-          padding: '6px 12px',
-          fontSize: '13px',
-          boxShadow: 'none',
-          backgroundImage: 'none',
-          backgroundColor: 'var(--color-bg-secondary)',
-          border: '1px solid var(--color-border-base)',
-          borderRadius: '6px',
-          color: 'var(--color-text-secondary)',
-          cursor: 'pointer',
-        },
-        '.cm-search .cm-button:hover': { backgroundColor: 'var(--color-bg-hover)' },
-        '.cm-search .cm-button:active': { backgroundColor: 'var(--color-bg-hover)' },
-        '.cm-search button[name="close"]': {
-          marginLeft: 'auto',
-          padding: '6px',
-          width: '28px',
-          height: '28px',
-          fontSize: '0', // 隐藏 × 文字
-          lineHeight: 0,
-          boxShadow: 'none',
-          backgroundImage: 'none',
-          backgroundColor: 'transparent',
-          border: 'none',
-          borderRadius: '6px',
-          cursor: 'pointer',
-          position: 'relative',
-        },
-        '.cm-search button[name="close"]::before': {
-          content: '""',
-          position: 'absolute',
-          inset: '6px',
-          // Tabler X icon SVG (24x24)
-          mask: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'currentColor\' stroke-width=\'2\' stroke-linecap=\'round\'%3E%3Cpath d=\'M18 6L6 18M6 6l12 12\'/%3E%3C/svg%3E") center/contain no-repeat',
-          backgroundColor: 'var(--color-text-secondary)',
-        },
-        '.cm-search button[name="close"]:hover': {
-          backgroundColor: 'var(--color-bg-hover)',
-          border: '1px solid var(--color-border-base)',
-        },
-        '.cm-search button[name="close"]:hover::before': {
-          backgroundColor: 'var(--color-primary)',
-        },
-        '.cm-search button[name="close"]:active': {
-          backgroundColor: 'var(--color-bg-hover)',
-        },
-        '.cm-search label': {
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '4px',
-          color: 'var(--color-text-secondary)',
-          fontSize: '12px',
-          cursor: 'pointer',
-        },
-        '.cm-search input[type="checkbox"]': {
-          accentColor: 'var(--color-primary)',
-        },
-        '.cm-searchMatch': { backgroundColor: 'rgba(164, 92, 64, 0.12)' },
-        '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'rgba(164, 92, 64, 0.24)' },
-      }),
+
     ];
     const savedSearch = { ...searchSession };
     const previousFocus = document.activeElement;
@@ -393,12 +280,7 @@
     if (restoreView) {
       const restored = restoreView;
       const view = editorView;
-      requestAnimationFrame(() => {
-        if (editorView !== view) return;
-        view.dispatch({ selection: { anchor: Math.min(restored.anchor, view.state.doc.length), head: Math.min(restored.head, view.state.doc.length) } });
-        view.scrollDOM.scrollTop = restored.top;
-        view.scrollDOM.scrollLeft = restored.left;
-      });
+      restorePosition(view, restored, () => editorView === view);
     }
     editedContent = initialContent;
     scheduleValidation(initialContent);
@@ -407,7 +289,7 @@
     }
   }
 
-  $: if (editorView) {
+  $: if (editorView && active) {
     const view = editorView;
     openSearchStore.set(() => openSearchPanel(view));
   }
@@ -425,11 +307,10 @@
     if (!editorView || readOnly) return;
     try {
       const current = editorView.state.doc.toString();
-      const formatted = format(current, FORMAT_OPTIONS);
+      const formatted = formatXmlContent(current);
       editorView.dispatch({
         changes: { from: 0, to: current.length, insert: formatted },
       });
-      dispatch('contentChange', { value: formatted });
     } catch {
       alert('Invalid XML');
     }
@@ -442,7 +323,7 @@
       {#if !readOnly}
         <button
           type="button"
-          class="shrink-0 h-7 w-7 box-border p-0 inline-flex items-center justify-center"
+          class="app-button shrink-0 h-7 w-7 box-border p-0 inline-flex items-center justify-center"
           title="Format"
           aria-label="Format"
           on:click={formatXml}
@@ -517,7 +398,7 @@
 <style>
   .status-actions { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
   .xml-error { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  :global(#app main button.xml-error) { color: #a33d32 !important; }
+  :global(#app main button.xml-error) { color: #a33d32; }
 
   .diff-status-bar {
     display: flex;

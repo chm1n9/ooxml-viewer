@@ -1,0 +1,20 @@
+/* Opt-in controls: component-owned buttons and CodeMirror keep their own styles. */
+:where(.app-button, .toolbar-utility, .toolbar-download) {
+  box-sizing: border-box;
+  box-shadow: none;
+  background-image: none;
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border-base);
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+:where(.app-button, .toolbar-download):hover,
+:where(.app-button, .toolbar-download):active { background-color: var(--color-bg-hover); }
+.toolbar-utility { background-color: transparent; border-color: transparent; }
+.toolbar-utility:hover, .toolbar-utility:active { background-color: var(--color-bg-hover); }
+.inline-diff-toggle[aria-pressed='true'] { background-color: var(--color-bg-element); color: var(--color-text-primary); }
+.toolbar-download.has-changes { background-color: #1f1e1b; border-color: #1f1e1b; color: var(--color-bg-white); }
+.toolbar-download.has-changes:hover, .toolbar-download.has-changes:active { background-color: #3b3933; border-color: #3b3933; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }

@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { droppedSource, pickSourceFile, watchSourceFile, fileVersion, type SourceFileHandle, type SourceWatchState } from './lib/sourceFile';
+  import { droppedSource, pickSourceFile, type SourceFileHandle } from './lib/sourceFile';
+  import { createSourceSession } from './lib/sourceSession';
+  import SourceDiffPanel from './lib/SourceDiffPanel.svelte';
+  import { sourceReloadPath, sourcePreviewChange, type SourcePreviewChange, type SourceChange } from './lib/sourceChanges';
   import DropZone from './lib/DropZone.svelte';
   import FileTree from './lib/FileTree.svelte';
   import XmlEditor from './lib/XmlEditor.svelte';
   import BinaryPreview from './lib/BinaryPreview.svelte';
   import ImagePreview from './lib/ImagePreview.svelte';
-  import RelsGraph from './lib/RelsGraph.svelte';
   import SettingsPanel from './lib/SettingsPanel.svelte';
   import GitHubLink from './lib/GitHubLink.svelte';
   import DiscardChangesDialog from './lib/DiscardChangesDialog.svelte';
@@ -14,8 +16,8 @@
   import { initShortcuts } from './lib/shortcuts';
   import { loadSettings, parseAutoCollapseTags } from './lib/settings';
   import { ACCEPT_OFFICE } from './lib/constants';
-  import { buildRelationsIndex, getRelationshipTargets } from './lib/relsGraph';
-  import { getRoute, getPathFromState, pushRoute, replaceToBase } from './lib/routeHistory';
+  import { createPackageIndex } from './lib/packageIndex';
+  import { getRoute, pushRoute, pushToBase, replaceRoute, replaceToBase } from './lib/routeHistory';
   import { isImagePath, loadOfficeFile, repackAndDownload, type FileEntry } from './lib/ooxml';
   import type JSZip from 'jszip';
 
@@ -25,90 +27,94 @@
 
   let zip: JSZip | null = null;
   let entries: FileEntry[] = [];
+  let packageIndex = createPackageIndex([]);
+  function setPackageEntries(list: FileEntry[]) {
+    entries = list;
+    packageIndex = createPackageIndex(list);
+  }
   let fileName = '';
   let searchSession = createEditorSearchSession();
-  let stopSourceWatch: (() => void) | null = null;
-  let sourceSession = 0;
-  let sourceStatus: SourceWatchState | 'unsupported' = 'unsupported';
-  let pendingSource: File | null = null;
-  let sourceNotice = '';
-  let sourceNoticeTimeout: ReturnType<typeof setTimeout> | undefined;
+  const source = createSourceSession();
+  $: sourceStatus = $source.status;
+  $: pendingSource = $source.pending;
+  $: pendingSourceChanges = $source.changes;
+  $: checkingSourceChanges = $source.checking;
+  $: sourceChangesError = $source.error;
+  $: sourceRequestBusy = $source.busy;
+  $: sourceNotice = $source.notice;
+  let sourceDiffPanel: SourceDiffPanel | null = null;
+  let sourceDiff: { change: SourcePreviewChange; before: JSZip; after: JSZip } | null = null;
 
-  function showSourceNotice(message: string) {
-    sourceNotice = message;
-    clearTimeout(sourceNoticeTimeout);
-    sourceNoticeTimeout = setTimeout(() => { sourceNotice = ''; }, 4000);
+  function closeSourceDiff() {
+    const editor = xmlEditor;
+    const snapshot = previewEditorView;
+    sourceDiff = null;
+    previewEditorView = null;
+    if (selectedPath) pushRoute(selectedPath);
+    else pushToBase();
+    void tick().then(() => { if (xmlEditor === editor) editor?.focusEditor(snapshot); });
   }
-  let sourceHandle: SourceFileHandle | null = null;
-  let loadedSourceVersion = '';
+
+  function showSourceDiff(path: string): boolean {
+    const baseline = $source.baseline;
+    const latest = $source.latest ?? (!$source.pending ? baseline : null);
+    if (!baseline || !latest || (!baseline.file(path) && !latest.file(path))) return false;
+    if (!sourceDiff) previewEditorView = xmlEditor?.captureView() ?? null;
+    sourceDiff = { change: sourcePreviewChange(path, pendingSourceChanges ?? []), before: baseline, after: latest };
+    return true;
+  }
+
+  function openSourceDiff(event: CustomEvent<SourceChange>) {
+    if (showSourceDiff(event.detail.path)) pushRoute(event.detail.path, 'source-diff');
+  }
+  $: if (sourceDiff && $source.latest && sourceDiff.after !== $source.latest) {
+    sourceDiff = { ...sourceDiff, change: sourcePreviewChange(sourceDiff.change.path, $source.changes), after: $source.latest };
+  }
   let showSourceConfirm = false;
-  let sourceRequestBusy = false;
   let sourceRevision = 0;
-  let sourceReloading = false;
   let editGeneration = 0;
   let xmlEditor: XmlEditor | null = null;
   let restoreView: { top: number; left: number; anchor: number; head: number } | null = null;
 
+  let previewEditorView: { top: number; left: number; anchor: number; head: number } | null = null;
+
   function stopWatchingSource() {
-    sourceSession++;
-    stopSourceWatch?.();
-    stopSourceWatch = null;
-    pendingSource = null;
-    sourceNotice = '';
-    clearTimeout(sourceNoticeTimeout);
-    sourceHandle = null;
-    loadedSourceVersion = '';
+    source.stop();
+    sourceDiff = null;
+    previewEditorView = null;
     showSourceConfirm = false;
-    sourceStatus = 'unsupported';
   }
 
-  async function reloadSource(file: File, session: number, discard = false): Promise<boolean> {
-    if (session !== sourceSession || sourceReloading || saving || loading || discardResolver || showSettingsPanel || document.querySelector('dialog[open]')) return false;
-    if (!discard && hasUnexportedChanges) return false;
+  async function reloadSource(file: File, isCurrent: () => boolean, discard = false): Promise<JSZip | null> {
+    if (!isCurrent() || saving || loading || discardResolver || showSettingsPanel || document.querySelector('dialog[open]')) return null;
+    if (!discard && hasUnexportedChanges) return null;
     const editsAtStart = editGeneration;
-    sourceReloading = true;
     try {
       const result = await loadOfficeFile(file);
-      if (session !== sourceSession) { revokePreviewUrls(result.entries); return false; }
+      if (!isCurrent()) { revokePreviewUrls(result.entries); return null; }
       if (saving || loading || editGeneration !== editsAtStart || (!discard && hasUnexportedChanges)) {
         revokePreviewUrls(result.entries);
-        return false;
+        return null;
       }
-      restoreView = xmlEditor?.captureView() ?? null;
+      const targetPath = sourceReloadPath(result.entries.map(entry => entry.path), selectedPath, sourceDiff?.change.path ?? null);
+      restoreView = sourceDiff && targetPath === sourceDiff.change.path
+        ? sourceDiffPanel?.captureView() ?? null
+        : targetPath === selectedPath ? (sourceDiff ? previewEditorView : xmlEditor?.captureView()) ?? null : null;
       revokePreviewUrls(entries);
       zip = result.zip;
-      entries = result.entries;
+      setPackageEntries(result.entries);
       exportedContents = snapshotContents(entries);
       fileName = result.fileName;
-      if (selectedPath && !entries.some(entry => entry.path === selectedPath)) {
-        selectedPath = null;
-        replaceToBase();
-      }
+      selectedPath = targetPath;
+      if (selectedPath) replaceRoute(selectedPath);
+      else replaceToBase();
+      sourceDiff = null;
       sourceRevision++;
-      loadedSourceVersion = fileVersion(file);
-      return true;
+      return result.zip;
     } catch {
       // A saving application may leave an incomplete ZIP briefly; retry later.
-      return false;
-    } finally {
-      sourceReloading = false;
+      return null;
     }
-  }
-
-  function watchOpenedSource(handle: SourceFileHandle | undefined, file: File) {
-    sourceHandle = handle ?? null;
-    loadedSourceVersion = fileVersion(file);
-    if (!handle) return;
-    const session = sourceSession;
-    stopSourceWatch = watchSourceFile(handle, file, async changed => {
-      if (session !== sourceSession) return false;
-      if (fileVersion(changed) !== loadedSourceVersion) {
-        pendingSource = changed;
-        sourceNotice = '';
-        clearTimeout(sourceNoticeTimeout);
-      }
-      return true;
-    }, state => { if (session === sourceSession) sourceStatus = state; });
   }
 
   function requestSourceReload() {
@@ -118,25 +124,7 @@
   }
 
   async function reloadPendingSource(discard: boolean) {
-    const pendingAtStart = pendingSource;
-    if (!pendingAtStart || sourceRequestBusy) return;
-    const session = sourceSession;
-    sourceRequestBusy = true;
-    try {
-      // Fetch a fresh snapshot; Office may have saved again since the notice.
-      const latest = sourceHandle ? await sourceHandle.getFile() : pendingAtStart;
-      if (session !== sourceSession) return;
-      const applied = await reloadSource(latest, session, discard);
-      if (session !== sourceSession) return;
-      if (applied) {
-        if (pendingSource === pendingAtStart || (pendingSource && fileVersion(pendingSource) === loadedSourceVersion)) pendingSource = null;
-        if (!pendingSource) showSourceNotice('Source file reloaded.');
-      } else showSourceNotice('Unable to reload right now. Your edits are preserved; try again shortly.');
-    } catch {
-      if (session === sourceSession) showSourceNotice('Source is unavailable. Your edits are preserved; try again shortly.');
-    } finally {
-      sourceRequestBusy = false;
-    }
+    await source.reload((file, isCurrent) => reloadSource(file, isCurrent, discard));
   }
 
   function resolveSourceUpdate(reload: boolean) {
@@ -151,7 +139,6 @@
   let noticeTimeout: ReturnType<typeof setTimeout> | undefined;
   let discardResolver: ((discard: boolean) => void) | null = null;
   let error = '';
-  let showRelsGraph = false;
   let showSettingsPanel = false;
   let settingsSnapshot = loadSettings();
 
@@ -233,7 +220,7 @@
     : sourceStatus === 'unavailable' ? 'Source monitoring paused · reopen file'
     : 'Source monitoring unavailable';
   $: fileStatusMessage = loading ? 'Reading file…' : saving ? 'Preparing download…'
-    : pendingSource ? (sourceNotice || 'Source changed')
+    : pendingSource ? (sourceNotice || `Source changed${checkingSourceChanges ? ' · checking…' : pendingSourceChanges ? ` · ${pendingSourceChanges.length} ${pendingSourceChanges.length === 1 ? 'file' : 'files'}` : ''}`)
     : error || sourceNotice || notice || ((!hasUnexportedChanges || sourceStatus !== 'watching') ? monitoringMessage : '');
 
   async function confirmDiscard(): Promise<boolean> {
@@ -258,7 +245,7 @@
     initialDataApplied = true;
     zip = initialData.zip;
     searchSession = createEditorSearchSession();
-    entries = initialData.entries;
+    setPackageEntries(initialData.entries);
     exportedContents = snapshotContents(entries);
     fileName = initialData.fileName;
     selectedPath = null;
@@ -286,23 +273,20 @@
     const { hasFile: h, entries: ent } = routeStateRef;
     if (!h || !ent.length) return;
     const route = getRoute();
-    if (route && ent.some((e) => e.path === route.path)) {
-      selectedPath = route.path;
-    } else {
-      selectedPath = null;
+    if (route?.view === 'source-diff' && showSourceDiff(route.path)) return;
+    sourceDiff = null;
+    previewEditorView = null;
+    selectedPath = route && ent.some(entry => entry.path === route.path) ? route.path : null;
+    // A URL cannot recover memory-only source snapshots after a page reload or package replacement.
+    if (route?.view === 'source-diff') {
+      if (selectedPath) replaceRoute(selectedPath);
+      else replaceToBase();
     }
   }
 
-  function onPopState(event: PopStateEvent) {
+  function onPopState() {
     restoreView = null;
-    const { hasFile: h, entries: ent } = routeStateRef;
-    if (!h || !ent.length) return;
-    const statePath = getPathFromState(event.state);
-    if (statePath && ent.some((e) => e.path === statePath)) {
-      selectedPath = statePath;
-    } else {
-      applyRouteToState();
-    }
+    applyRouteToState();
   }
 
   onMount(() => {
@@ -350,9 +334,9 @@
     return 4;
   }
 
-  $: packagePaths = new Set(entries.map(entry => entry.path));
-  $: relationshipTargets = selectedPath ? getRelationshipTargets(selectedPath, entries) : new Map<string, string>();
-  $: relationsIndex = buildRelationsIndex(entries);
+  $: packagePaths = packageIndex.paths;
+  $: relationshipTargets = packageIndex.targetsFor(selectedPath ?? '');
+  $: relationsIndex = packageIndex;
   $: currentReferencedBy = [...(relationsIndex.referencedBy.get(selectedPath ?? '') ?? [])]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   $: currentDependencies = (() => {
@@ -394,11 +378,12 @@
         revokePreviewUrls(entries);
         zip = result.zip;
         searchSession = createEditorSearchSession();
-        entries = result.entries;
+        setPackageEntries(result.entries);
         exportedContents = snapshotContents(entries);
         fileName = result.fileName;
         selectedPath = null;
-        watchOpenedSource(event.detail.handle, file);
+        replaceToBase();
+        source.start(file, result.zip, event.detail.handle);
       });
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to open file';
@@ -408,6 +393,7 @@
   }
 
   function onFileSelect(event: CustomEvent<{ path: string }>) {
+    sourceDiff = null;
     restoreView = null;
     selectedPath = event.detail.path;
     if (hasFile && selectedPath) pushRoute(selectedPath);
@@ -427,6 +413,7 @@
         exportedContents = new Map(exportedContents).set(entry.path, event.detail.value);
       }
       entry.content = event.detail.value;
+      if (packageIndex.update(entry.path, entry.content)) packageIndex = packageIndex;
       entries = [...entries];
     }
   }
@@ -440,7 +427,7 @@
     requestAnimationFrame(() => {
       withViewTransition(() => {
         zip = null;
-        entries = [];
+        setPackageEntries([]);
         searchSession = createEditorSearchSession();
         exportedContents = new Map();
         fileName = '';
@@ -553,7 +540,7 @@
       height: 20px;
       padding: 0 5px;
       font-size: 11px;
-      color: var(--color-primary) !important;
+      color: var(--color-primary);
     }
     @media (max-height: 560px) {
       .upload-home { padding-bottom: 2rem; }
@@ -566,57 +553,6 @@
       letter-spacing: -0.02em;
     }
     ul, ol { padding-inline-start: 0; }
-    /* Unified flat button: higher specificity so we override CM and others */
-    #app button:not(.settings-overlay-backdrop):not(:where(.dependency-item, .part-path, .dependency-trigger, .cm-part-link-target, .cm-revert-change)),
-    #app .app-button,
-    #app .cm-button,
-    #app main button:not(.settings-overlay-backdrop):not(:where(.dependency-item, .part-path, .dependency-trigger, .cm-part-link-target, .cm-revert-change)) {
-      box-shadow: none !important;
-      background-image: none !important;
-      background-color: var(--color-bg-secondary) !important;
-      border: 1px solid var(--color-border-base) !important;
-      border-radius: 6px !important;
-      color: var(--color-text-secondary) !important;
-      font: inherit;
-      cursor: pointer;
-    }
-    #app button:not(.settings-overlay-backdrop):not(:where(.dependency-item, .part-path, .dependency-trigger, .cm-part-link-target, .cm-revert-change)):hover,
-    #app .app-button:hover,
-    #app .cm-button:hover {
-      background-color: var(--color-bg-hover) !important;
-    }
-    #app button:not(.settings-overlay-backdrop):not(:where(.dependency-item, .part-path, .dependency-trigger, .cm-part-link-target, .cm-revert-change)):active,
-    #app .app-button:active,
-    #app .cm-button:active {
-      background-color: var(--color-bg-hover) !important;
-    }
-    #app button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    #app main button.toolbar-utility,
-    #app main a.toolbar-utility {
-      background-color: transparent !important;
-      border-color: transparent !important;
-    }
-    #app main .toolbar-utility:hover,
-    #app main .toolbar-utility:active {
-      background-color: var(--color-bg-hover) !important;
-    }
-    #app main button.inline-diff-toggle[aria-pressed="true"] {
-      background-color: var(--color-bg-element) !important;
-      color: var(--color-text-primary) !important;
-    }
-    #app main button.toolbar-download.has-changes {
-      background-color: #1f1e1b !important;
-      border-color: #1f1e1b !important;
-      color: var(--color-bg-white) !important;
-    }
-    #app main button.toolbar-download.has-changes:hover,
-    #app main button.toolbar-download.has-changes:active {
-      background-color: #3b3933 !important;
-      border-color: #3b3933 !important;
-    }
     * {
       scrollbar-width: none;
       -ms-overflow-style: none;
@@ -651,7 +587,7 @@
   {#if showSourceConfirm}
     <DiscardChangesDialog
       title="Source file changed"
-      description="The file on disk has changed. Reloading replaces your current unexported edits with the source file. Keep editing to preserve your current work."
+      description="Reload the entire package from disk? All unexported edits in every file will be replaced. Download your current edits first if you want to keep them."
       confirmLabel="Reload source"
       onResolve={resolveSourceUpdate}
     />
@@ -693,9 +629,12 @@
             <span class="file-status-message" class:text-primary={!!pendingSource} class:text-red-600={!!error} title={fileStatusMessage}>{fileStatusMessage}</span>
           {/if}
           {#if pendingSource}
-            <button type="button" class="toolbar-utility file-status-reload" disabled={sourceRequestBusy || saving || loading} on:click={requestSourceReload} title="Reload source file">
+            {#if sourceChangesError}
+              <button type="button" class="toolbar-utility file-status-reload" disabled={checkingSourceChanges} title={sourceChangesError} on:click={() => { void source.retry(); }}>Retry check</button>
+            {/if}
+            <button type="button" class="toolbar-utility file-status-reload" disabled={sourceRequestBusy || saving || loading} on:click={requestSourceReload} title="Reload the entire package from disk">
               <span class="i-tabler-refresh w-3 h-3" aria-hidden="true"></span>
-              {sourceRequestBusy ? 'Reloading…' : 'Reload'}
+              {sourceRequestBusy ? 'Reloading…' : 'Reload source'}
             </button>
           {/if}
         </div>
@@ -705,7 +644,7 @@
           <button
             class="toolbar-download h-9 px-3 text-sm font-medium inline-flex items-center gap-2"
             class:has-changes={hasUnexportedChanges}
-            title={`Download (${saveShortcutLabel})`}
+            title={sourceDiff || pendingSource ? `Download the loaded package with your edits; pending disk updates are excluded (${saveShortcutLabel})` : `Download (${saveShortcutLabel})`}
             aria-keyshortcuts={saveShortcutLabel === '⌘S' ? 'Meta+S' : 'Control+S'}
             disabled={saving || loading}
             on:click={save}
@@ -722,7 +661,7 @@
     <SettingsPanel
       visible={showSettingsPanel}
       onClose={() => (showSettingsPanel = false)}
-      onSave={(s) => (settingsSnapshot = s)}
+      onSave={(settings) => { settingsSnapshot = settings; }}
     />
     <div class="flex-1 flex min-h-0 overflow-hidden bg-bg-base">
       <div
@@ -731,8 +670,10 @@
       >
         <FileTree
           bind:this={fileTree}
-          entries={entries}
-          selectedPath={selectedPath}
+          entries={packageIndex.treeEntries}
+          selectedPath={sourceDiff?.change.path ?? selectedPath}
+          sourceChanges={pendingSourceChanges ?? []}
+          on:sourceSelect={openSourceDiff}
           fileName={fileName}
           {modifiedPaths}
           on:select={onFileSelect}
@@ -758,10 +699,9 @@
         aria-label="Resize sidebar"
         on:mousedown={resizeHandleMousedown}
       ></div>
+      <div class="flex-1 min-w-0 min-h-0 overflow-hidden" style:display={sourceDiff ? 'none' : 'flex'} aria-hidden={sourceDiff ? 'true' : undefined}>
       {#key `${sourceRevision}:${selectedPath}`}
-        {#if showRelsGraph}
-          <RelsGraph entries={entries} />
-        {:else if currentEntry?.previewUrl}
+        {#if currentEntry?.previewUrl}
           <ImagePreview
             path={selectedPath}
             previewUrl={currentEntry.previewUrl}
@@ -781,6 +721,7 @@
         {:else}
           <XmlEditor
             bind:this={xmlEditor}
+            active={!sourceDiff}
             {restoreView}
             path={selectedPath}
             content={editorContent}
@@ -798,6 +739,12 @@
           />
         {/if}
       {/key}
+      </div>
+      {#if sourceDiff}
+        {#key sourceDiff.change.path}
+          <SourceDiffPanel bind:this={sourceDiffPanel} change={sourceDiff.change} before={sourceDiff.before} after={sourceDiff.after} onClose={closeSourceDiff} />
+        {/key}
+      {/if}
     </div>
   {/if}
 </main>

@@ -7,15 +7,25 @@
   export let onSave: ((settings: ViewerSettings) => void) | undefined = undefined;
 
   let settings: ViewerSettings = loadSettings();
+  let saveError = '';
 
   $: if (visible) {
     settings = loadSettings();
+    saveError = '';
   }
 
   function handleClose() {
-    saveSettings(settings);
-    onSave?.(settings);
     onClose();
+  }
+
+  function handleSave() {
+    try {
+      saveSettings(settings);
+      onSave?.({ ...settings });
+      onClose();
+    } catch {
+      saveError = 'Settings could not be saved. Please try again.';
+    }
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -64,11 +74,12 @@
           />
           <span class="settings-hint">Comma-separated tag names to fold when opening a file.</span>
         </label>
+        {#if saveError}<p class="settings-hint" role="alert">{saveError}</p>{/if}
       </div>
       <div class="settings-footer">
         <GitHubLink subtle />
-        <button type="button" class="settings-btn-primary" on:click={handleClose}>
-          Done
+        <button type="button" class="app-button settings-btn-primary" on:click={handleSave}>
+          Save
         </button>
       </div>
     </div>
@@ -186,11 +197,11 @@
     font-weight: 500;
     border-radius: 6px;
     border: 1px solid var(--color-border-base);
-    background: var(--color-primary);
-    color: white;
+    background: var(--color-bg-secondary);
+    color: var(--color-text-secondary);
     cursor: pointer;
   }
   .settings-btn-primary:hover {
-    background: var(--color-primary-hover);
+    background: var(--color-bg-hover);
   }
 </style>

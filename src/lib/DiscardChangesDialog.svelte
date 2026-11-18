@@ -24,8 +24,8 @@
   <h2 id="discard-title" class="m-0 text-base font-semibold text-text-primary">{title}</h2>
   <p id="discard-description" class="mt-3 mb-5 text-sm text-text-secondary leading-relaxed">{description}</p>
   <div class="flex justify-end gap-2">
-    <button bind:this={keepEditingButton} type="button" class="px-3 py-2 text-sm" on:click={() => resolve(false)}>Keep editing</button>
-    <button type="button" class="px-3 py-2 text-sm" on:click={() => resolve(true)}>{confirmLabel}</button>
+    <button bind:this={keepEditingButton} type="button" class="app-button px-3 py-2 text-sm" on:click={() => resolve(false)}>Keep editing</button>
+    <button type="button" class="app-button px-3 py-2 text-sm" on:click={() => resolve(true)}>{confirmLabel}</button>
   </div>
 </dialog>
 

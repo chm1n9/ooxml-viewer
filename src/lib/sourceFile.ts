@@ -1,4 +1,4 @@
-import { ACCEPT_OFFICE_EXTENSIONS } from './constants';
+import { ACCEPT_OFFICE_EXTENSIONS } from './constants.ts';
 
 export interface SourceFileHandle {
   readonly kind: 'file';

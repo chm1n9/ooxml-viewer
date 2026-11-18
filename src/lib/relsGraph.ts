@@ -4,20 +4,7 @@
  * Root package rels: "_rels/.rels" (no single owner part).
  */
 
-export interface RelsEdge {
-  from: string;
-  to: string;
-  type: string;
-  typeUri: string;
-}
-
-export interface RelsGraph {
-  nodes: Set<string>;
-  edges: RelsEdge[];
-}
-
 const RELS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
-const PACKAGE_ROOT = '[Package]';
 
 /** Get .rels path for a part. e.g. "docProps/app.xml" -> "docProps/_rels/app.xml.rels" */
 export function getPartRelsPath(partPath: string): string {
@@ -43,7 +30,7 @@ export function ownerPartFromRelsPath(relsPath: string): string {
 export function resolveTarget(relsPath: string, target: string): string {
   const targetTrimmed = target.split('?')[0].trim();
   const baseDir =
-    relsPath === '_rels/.rels' ? '' : relsPath.replace(/\/_rels\/[^/]+$/, '');
+    relsPath === '_rels/.rels' ? '' : relsPath.replace(/(?:^|\/)_rels\/[^/]+$/, '');
   const combined = targetTrimmed.startsWith('/') ? targetTrimmed : baseDir ? `${baseDir}/${targetTrimmed}` : targetTrimmed;
   const segments = combined.split('/');
   const out: string[] = [];
@@ -52,12 +39,6 @@ export function resolveTarget(relsPath: string, target: string): string {
     else if (s !== '.' && s !== '') out.push(s);
   }
   return out.join('/');
-}
-
-/** Shorten relationship type URI to last segment for display. */
-function shortType(typeUri: string): string {
-  const s = typeUri.split('/').pop() ?? typeUri;
-  return s || 'relationship';
 }
 
 /** Parse .rels XML content and return { id, type, target }[]. */
@@ -86,82 +67,12 @@ function parseRelsXml(xml: string): { id: string; type: string; target: string }
   return list;
 }
 
-/** Resolve relationship IDs only to files present in this package. */
-export function getRelationshipTargets(partPath: string, entries: { path: string; content: string }[]): Map<string, string> {
-  const relsPath = partPath.endsWith('.rels') ? partPath : getPartRelsPath(partPath);
-  const rels = entries.find(entry => entry.path === relsPath);
-  const existing = new Set(entries.map(entry => entry.path));
+/** Resolve one relationship part against the current package paths. */
+export function relationshipTargetsForRels(relsPath: string, content: string, existing: Set<string>): Map<string, string> {
   const targets = new Map<string, string>();
-  if (!rels) return targets;
-  for (const relationship of parseRelsXml(rels.content)) {
+  for (const relationship of parseRelsXml(content)) {
     const target = resolveTarget(relsPath, relationship.target);
     if (existing.has(target)) targets.set(relationship.id, target);
   }
   return targets;
-}
-
-/** Build dependency graph from entries (must include all .rels and parts). */
-export function buildRelsGraph(entries: { path: string; content: string }[]): RelsGraph {
-  const nodes = new Set<string>();
-  const edges: RelsEdge[] = [];
-
-  const relsEntries = entries.filter((e) => e.path.replace(/\\/g, '/').endsWith('.rels'));
-  for (const entry of relsEntries) {
-    const relsPath = entry.path.replace(/\\/g, '/');
-    const owner = relsPath === '_rels/.rels' ? PACKAGE_ROOT : ownerPartFromRelsPath(relsPath);
-    nodes.add(owner);
-    const list = parseRelsXml(entry.content);
-    for (const { type, target } of list) {
-      const toPath = resolveTarget(relsPath, target);
-      nodes.add(toPath);
-      edges.push({
-        from: owner,
-        to: toPath,
-        type: shortType(type),
-        typeUri: type,
-      });
-    }
-  }
-
-  return { nodes, edges };
-}
-
-/** Index existing internal parts once per package update, preserving both directions. */
-export function buildRelationsIndex(entries: { path: string; content: string }[]) {
-  const existing = new Set(entries.map(entry => entry.path));
-  const references = new Map<string, Set<string>>();
-  const referencedBy = new Map<string, Set<string>>();
-  for (const edge of buildRelsGraph(entries).edges) {
-    const source = edge.from === PACKAGE_ROOT ? '_rels/.rels' : edge.from;
-    if (!existing.has(source) || !existing.has(edge.to)) continue;
-    if (!references.has(source)) references.set(source, new Set());
-    if (!referencedBy.has(edge.to)) referencedBy.set(edge.to, new Set());
-    references.get(source)!.add(edge.to);
-    referencedBy.get(edge.to)!.add(source);
-  }
-  return { references, referencedBy };
-}
-
-/** Get display label for a node (short name). */
-export function nodeLabel(path: string): string {
-  if (path === PACKAGE_ROOT) return PACKAGE_ROOT;
-  const name = path.split('/').pop() ?? path;
-  return name.length > 36 ? name.slice(0, 33) + '…' : name;
-}
-
-/** Get list of part paths that the given part depends on (targets of its .rels), excluding .rels files. */
-export function getDependenciesForPart(
-  partPath: string,
-  entries: { path: string; content: string }[]
-): string[] {
-  const relsPath = getPartRelsPath(partPath);
-  const entry = entries.find((e) => e.path.replace(/\\/g, '/') === relsPath);
-  if (!entry) return [];
-  const list = parseRelsXml(entry.content);
-  const out: string[] = [];
-  for (const { target } of list) {
-    const resolved = resolveTarget(relsPath, target);
-    if (!resolved.toLowerCase().endsWith('.rels')) out.push(resolved);
-  }
-  return out;
 }

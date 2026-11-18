@@ -2,13 +2,13 @@ import { unifiedMergeView } from '@codemirror/merge';
 import { EditorView } from '@codemirror/view';
 
 /** Display-only diff: the original text never becomes part of the editable document. */
-export function inlineDiff(original: string) {
+export function inlineDiff(original: string, revert = true) {
   return [
     unifiedMergeView({
       original,
       highlightChanges: true,
       gutter: true,
-      mergeControls: (type, action) => {
+      mergeControls: !revert ? false : (type, action) => {
         if (type === 'accept') {
           const placeholder = document.createElement('span');
           placeholder.hidden = true;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
 
+  export let label = 'Relations';
   export let visible: boolean = false;
   export let anchor: HTMLElement | null = null;
 
@@ -12,7 +13,9 @@
 
   function portal(node: HTMLDivElement) {
     document.body.appendChild(node);
-    return { destroy: () => node.remove() };
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);
+    resize?.observe(node);
+    return { destroy: () => { resize?.disconnect(); node.remove(); } };
   }
 
   function updatePosition() {
@@ -73,7 +76,7 @@
     use:portal
     class="popover-container custom-scrollbar"
     role="region"
-    aria-label="Relations"
+    aria-label={label}
     tabindex="-1"
     on:mouseenter
     on:mouseleave

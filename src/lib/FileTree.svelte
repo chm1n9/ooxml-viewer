@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import type { SourceChange } from './sourceChanges';
   import FileTreeNode from './FileTreeNode.svelte';
-  import { buildFileTree, nodeId, getFolderKeysForPath } from './fileTree';
+  import { buildFileTree, nodeId, getFolderKeysForPath, sourceTreeEntries, sourceFolderKeys } from './fileTree';
   import type { FileEntry as FileEntryType } from './ooxml';
 
   export let entries: FileEntryType[] = [];
   export let selectedPath: string | null = null;
   export let fileName: string = '';
+  export let sourceChanges: SourceChange[] = [];
   export let modifiedPaths: Set<string> = new Set();
 
   let filter = '';
@@ -77,9 +79,12 @@
 
   $: query = filter.trim().toLowerCase();
   $: { query; collapsedFilterKeys = []; }
+  $: displayEntries = sourceTreeEntries(entries, sourceChanges);
+  $: sourceChangesByPath = new Map(sourceChanges.map(change => [change.path, change]));
+  $: updatedFolders = sourceFolderKeys(sourceChanges);
   $: filteredEntries = query
-    ? entries.filter((entry) => (entry.path.split('/').pop() ?? '').toLowerCase().includes(query))
-    : entries;
+    ? displayEntries.filter((entry) => (entry.path.split('/').pop() ?? '').toLowerCase().includes(query))
+    : displayEntries;
   $: treeRoots = buildFileTree(filteredEntries);
   $: visibleExpandedKeys = query
     ? [...new Set(filteredEntries.flatMap((entry) => getFolderKeysForPath(entry.path)))].filter((key) => !collapsedFilterKeys.includes(key))
@@ -111,7 +116,7 @@
     const item = listEl?.querySelector(`[data-file-path="${CSS.escape(path)}"] .tree-row`);
     if (!(item instanceof HTMLElement)) return;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    item.focus({ preventScroll: true });
+    item.querySelector<HTMLButtonElement>('.file-name-trigger')?.focus({ preventScroll: true });
     item.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'instant' : 'smooth' });
     if (!reducedMotion) {
       item.getAnimations().forEach((animation) => animation.cancel());
@@ -148,13 +153,13 @@
       <span class="i-tabler-search w-4 h-4 shrink-0 text-text-secondary" aria-hidden="true"></span>
       <input bind:this={filterInput} type="search" aria-label="Filter files by name" placeholder="Filter files…" maxlength="200" bind:value={filter} on:keydown={onFilterKeydown} class="file-filter min-w-0 w-full h-8 border-0 outline-none bg-transparent text-xs text-text-primary font-inherit" />
       {#if filter}
-        <button type="button" class="p-0.5 inline-flex shrink-0" title="Clear filter" aria-label="Clear filter" on:click={() => { filter = ''; filterInput?.focus(); }}>
+        <button type="button" class="app-button p-0.5 inline-flex shrink-0" title="Clear filter" aria-label="Clear filter" on:click={() => { filter = ''; filterInput?.focus(); }}>
           <span class="i-tabler-x w-3.5 h-3.5" aria-hidden="true"></span>
         </button>
       {/if}
     </div>
     {#if query}
-      <p class="m-0 pt-1 text-xs text-text-secondary" role="status">{filteredEntries.length} of {entries.length} files</p>
+      <p class="m-0 pt-1 text-xs text-text-secondary" role="status">{filteredEntries.length} of {displayEntries.length} files</p>
     {/if}
   </div>
   {/if}
@@ -165,6 +170,8 @@
         {selectedPath}
         expandedKeys={visibleExpandedKeys}
         {modifiedPaths}
+        {sourceChangesByPath}
+        {updatedFolders}
         depth={0}
         onToggle={(key) => {
           if (query) {
@@ -178,6 +185,7 @@
             : [...expandedKeys, key];
         }}
         on:select
+        on:sourceSelect
       />
     {/each}
     {#if query && filteredEntries.length === 0}

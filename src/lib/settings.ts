@@ -17,9 +17,9 @@ function loadRaw(): string | null {
 
 /** Load settings from localStorage. Missing keys use defaults. */
 export function loadSettings(): ViewerSettings {
-  const raw = loadRaw();
-  if (raw == null) return { ...DEFAULT_SETTINGS };
   try {
+    const raw = loadRaw();
+    if (raw == null) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<ViewerSettings>;
     return {
       autoCollapseTags: typeof parsed.autoCollapseTags === 'string' ? parsed.autoCollapseTags : DEFAULT_SETTINGS.autoCollapseTags,

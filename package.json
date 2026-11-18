@@ -7,7 +7,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:source-changes": "node --experimental-strip-types --test tests/sourceChanges.test.mjs",
+    "test:settings": "node --experimental-strip-types --test tests/settings.test.mjs",
+    "test:routes": "node --experimental-strip-types --test tests/routeHistory.test.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "devDependencies": {
     "@iconify-json/tabler": "^1.2.18",
@@ -28,10 +32,8 @@
     "@codemirror/search": "^6.2.0",
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.26.0",
-    "codemirror": "^6.0.1",
     "jszip": "^3.10.1",
     "normalize.css": "^8.0.1",
-    "svelte-codemirror-editor": "^1.4.1",
     "xml-formatter": "^3.3.0"
   },
   "pnpm": {
