@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
+  import { droppedSource, pickSourceFile, watchSourceFile, fileVersion, type SourceFileHandle, type SourceWatchState } from './lib/sourceFile';
   import DropZone from './lib/DropZone.svelte';
   import FileTree from './lib/FileTree.svelte';
   import XmlEditor from './lib/XmlEditor.svelte';
@@ -26,6 +27,122 @@
   let entries: FileEntry[] = [];
   let fileName = '';
   let searchSession = createEditorSearchSession();
+  let stopSourceWatch: (() => void) | null = null;
+  let sourceSession = 0;
+  let sourceStatus: SourceWatchState | 'unsupported' = 'unsupported';
+  let pendingSource: File | null = null;
+  let sourceNotice = '';
+  let sourceNoticeTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  function showSourceNotice(message: string) {
+    sourceNotice = message;
+    clearTimeout(sourceNoticeTimeout);
+    sourceNoticeTimeout = setTimeout(() => { sourceNotice = ''; }, 4000);
+  }
+  let sourceHandle: SourceFileHandle | null = null;
+  let loadedSourceVersion = '';
+  let showSourceConfirm = false;
+  let sourceRequestBusy = false;
+  let sourceRevision = 0;
+  let sourceReloading = false;
+  let editGeneration = 0;
+  let xmlEditor: XmlEditor | null = null;
+  let restoreView: { top: number; left: number; anchor: number; head: number } | null = null;
+
+  function stopWatchingSource() {
+    sourceSession++;
+    stopSourceWatch?.();
+    stopSourceWatch = null;
+    pendingSource = null;
+    sourceNotice = '';
+    clearTimeout(sourceNoticeTimeout);
+    sourceHandle = null;
+    loadedSourceVersion = '';
+    showSourceConfirm = false;
+    sourceStatus = 'unsupported';
+  }
+
+  async function reloadSource(file: File, session: number, discard = false): Promise<boolean> {
+    if (session !== sourceSession || sourceReloading || saving || loading || discardResolver || showSettingsPanel || document.querySelector('dialog[open]')) return false;
+    if (!discard && hasUnexportedChanges) return false;
+    const editsAtStart = editGeneration;
+    sourceReloading = true;
+    try {
+      const result = await loadOfficeFile(file);
+      if (session !== sourceSession) { revokePreviewUrls(result.entries); return false; }
+      if (saving || loading || editGeneration !== editsAtStart || (!discard && hasUnexportedChanges)) {
+        revokePreviewUrls(result.entries);
+        return false;
+      }
+      restoreView = xmlEditor?.captureView() ?? null;
+      revokePreviewUrls(entries);
+      zip = result.zip;
+      entries = result.entries;
+      exportedContents = snapshotContents(entries);
+      fileName = result.fileName;
+      if (selectedPath && !entries.some(entry => entry.path === selectedPath)) {
+        selectedPath = null;
+        replaceToBase();
+      }
+      sourceRevision++;
+      loadedSourceVersion = fileVersion(file);
+      return true;
+    } catch {
+      // A saving application may leave an incomplete ZIP briefly; retry later.
+      return false;
+    } finally {
+      sourceReloading = false;
+    }
+  }
+
+  function watchOpenedSource(handle: SourceFileHandle | undefined, file: File) {
+    sourceHandle = handle ?? null;
+    loadedSourceVersion = fileVersion(file);
+    if (!handle) return;
+    const session = sourceSession;
+    stopSourceWatch = watchSourceFile(handle, file, async changed => {
+      if (session !== sourceSession) return false;
+      if (fileVersion(changed) !== loadedSourceVersion) {
+        pendingSource = changed;
+        sourceNotice = '';
+        clearTimeout(sourceNoticeTimeout);
+      }
+      return true;
+    }, state => { if (session === sourceSession) sourceStatus = state; });
+  }
+
+  function requestSourceReload() {
+    if (!pendingSource || sourceRequestBusy || loading || saving) return;
+    if (hasUnexportedChanges) showSourceConfirm = true;
+    else void reloadPendingSource(false);
+  }
+
+  async function reloadPendingSource(discard: boolean) {
+    const pendingAtStart = pendingSource;
+    if (!pendingAtStart || sourceRequestBusy) return;
+    const session = sourceSession;
+    sourceRequestBusy = true;
+    try {
+      // Fetch a fresh snapshot; Office may have saved again since the notice.
+      const latest = sourceHandle ? await sourceHandle.getFile() : pendingAtStart;
+      if (session !== sourceSession) return;
+      const applied = await reloadSource(latest, session, discard);
+      if (session !== sourceSession) return;
+      if (applied) {
+        if (pendingSource === pendingAtStart || (pendingSource && fileVersion(pendingSource) === loadedSourceVersion)) pendingSource = null;
+        if (!pendingSource) showSourceNotice('Source file reloaded.');
+      } else showSourceNotice('Unable to reload right now. Your edits are preserved; try again shortly.');
+    } catch {
+      if (session === sourceSession) showSourceNotice('Source is unavailable. Your edits are preserved; try again shortly.');
+    } finally {
+      sourceRequestBusy = false;
+    }
+  }
+
+  function resolveSourceUpdate(reload: boolean) {
+    showSourceConfirm = false;
+    if (reload) void reloadPendingSource(true);
+  }
   let selectedPath: string | null = null;
   let saving = false;
   let loading = false;
@@ -73,11 +190,13 @@
 
   function onHomeDrop(event: DragEvent) {
     if (hasFile) return;
-    const file = event.dataTransfer?.files[0];
-    if (!file) { resetHomeDrag(); return; }
+    const data = event.dataTransfer;
+    if (!data?.files.length) { resetHomeDrag(); return; }
     event.preventDefault();
     resetHomeDrag();
-    void onDrop(new CustomEvent('drop', { detail: { file } }));
+    void droppedSource(data).then(source => {
+      if (source) return onDrop(new CustomEvent('drop', { detail: source }));
+    }).catch(() => { error = 'Unable to read dropped file.'; });
   }
 
   let dragging = false;
@@ -109,6 +228,13 @@
     .filter((entry) => !entry.isBinary && exportedContents.get(entry.path) !== entry.content)
     .map((entry) => entry.path));
   $: hasUnexportedChanges = modifiedPaths.size > 0;
+  $: monitoringMessage = sourceStatus === 'watching' ? 'Source monitoring on'
+    : sourceStatus === 'retrying' ? 'Source monitoring · waiting'
+    : sourceStatus === 'unavailable' ? 'Source monitoring paused · reopen file'
+    : 'Source monitoring unavailable';
+  $: fileStatusMessage = loading ? 'Reading file…' : saving ? 'Preparing download…'
+    : pendingSource ? (sourceNotice || 'Source changed')
+    : error || sourceNotice || notice || ((!hasUnexportedChanges || sourceStatus !== 'watching') ? monitoringMessage : '');
 
   async function confirmDiscard(): Promise<boolean> {
     if (!hasUnexportedChanges) return true;
@@ -168,6 +294,7 @@
   }
 
   function onPopState(event: PopStateEvent) {
+    restoreView = null;
     const { hasFile: h, entries: ent } = routeStateRef;
     if (!h || !ent.length) return;
     const statePath = getPathFromState(event.state);
@@ -198,6 +325,7 @@
 
   onDestroy(() => {
     window.removeEventListener('popstate', onPopState);
+    stopWatchingSource();
     teardownShortcuts?.();
     clearTimeout(noticeTimeout);
     revokePreviewUrls(entries);
@@ -251,7 +379,7 @@
     }
   }
 
-  async function onDrop(event: CustomEvent<{ file: File }>) {
+  async function onDrop(event: CustomEvent<{ file: File; handle?: SourceFileHandle }>) {
     if (loading || saving) return;
     if (!(await confirmDiscard()) || loading || saving) return;
     const file = event.detail.file;
@@ -260,6 +388,8 @@
     loading = true;
     try {
       const result = await loadOfficeFile(file);
+      stopWatchingSource();
+      restoreView = null;
       withViewTransition(() => {
         revokePreviewUrls(entries);
         zip = result.zip;
@@ -268,6 +398,7 @@
         exportedContents = snapshotContents(entries);
         fileName = result.fileName;
         selectedPath = null;
+        watchOpenedSource(event.detail.handle, file);
       });
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to open file';
@@ -277,6 +408,7 @@
   }
 
   function onFileSelect(event: CustomEvent<{ path: string }>) {
+    restoreView = null;
     selectedPath = event.detail.path;
     if (hasFile && selectedPath) pushRoute(selectedPath);
   }
@@ -289,6 +421,7 @@
     if (!selectedPath) return;
     const entry = entries.find((e) => e.path === selectedPath);
     if (entry && !entry.isBinary) {
+      if (!event.detail.initial) editGeneration++;
       // Automatic display formatting is not a user edit. Keep an already-dirty baseline intact.
       if (event.detail.initial && exportedContents.get(entry.path) === entry.content) {
         exportedContents = new Map(exportedContents).set(entry.path, event.detail.value);
@@ -301,6 +434,8 @@
   async function newFile() {
     if (loading || saving) return;
     if (!(await confirmDiscard()) || loading || saving) return;
+    stopWatchingSource();
+    restoreView = null;
     revokePreviewUrls(entries);
     requestAnimationFrame(() => {
       withViewTransition(() => {
@@ -348,7 +483,11 @@
     }
   }
 
-  function openFileInput() {
+  async function openFileInput() {
+    if (loading || saving) return;
+    const source = await pickSourceFile();
+    if (source === null) return;
+    if (source) { await onDrop(new CustomEvent('drop', { detail: source })); return; }
     const input = document.getElementById('file-input') as HTMLInputElement;
     input?.click();
   }
@@ -389,6 +528,32 @@
     }
     .upload-home {
       padding-bottom: calc(2rem + clamp(24px, 8vh, 80px));
+    }
+    .file-status-line {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: 20px;
+      min-width: 0;
+      color: var(--color-text-muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .file-status-message, .file-status-modified {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-status-modified { flex-shrink: 0; max-width: 55%; }
+    #app main button.file-status-reload {
+      display: inline-flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 4px;
+      height: 20px;
+      padding: 0 5px;
+      font-size: 11px;
+      color: var(--color-primary) !important;
     }
     @media (max-height: 560px) {
       .upload-home { padding-bottom: 2rem; }
@@ -483,6 +648,14 @@
 />
 
 <main class="relative m-0 p-0 min-h-screen h-full flex flex-col bg-bg-base" class:select-none={dragging || !hasFile}>
+  {#if showSourceConfirm}
+    <DiscardChangesDialog
+      title="Source file changed"
+      description="The file on disk has changed. Reloading replaces your current unexported edits with the source file. Keep editing to preserve your current work."
+      confirmLabel="Reload source"
+      onResolve={resolveSourceUpdate}
+    />
+  {/if}
   {#if discardResolver}
     <DiscardChangesDialog onResolve={resolveDiscard} />
   {/if}
@@ -509,11 +682,23 @@
     </section>
   {:else}
     <header class="shrink-0 flex items-center justify-between gap-3 px-3 py-3 border-b border-border-base bg-bg-base">
-      <div class="min-w-0 pl-2 flex flex-col gap-0.5">
+      <div class="min-w-0 flex-1 pl-2 flex flex-col gap-0.5">
         <span class="font-mono font-medium text-text-primary truncate text-sm" title={fileName}>{fileName}</span>
-        {#if hasUnexportedChanges}
-          <span class="text-xs text-primary truncate" role="status" title="Download a copy to export your changes">Unexported changes · {modifiedPaths.size}</span>
-        {/if}
+        <div class="file-status-line" role="status" aria-label="File status">
+          {#if hasUnexportedChanges}
+            <span class="file-status-modified text-primary" title="Download a copy to export your changes">Unexported changes · {modifiedPaths.size}</span>
+          {/if}
+          {#if hasUnexportedChanges && fileStatusMessage}<span aria-hidden="true">·</span>{/if}
+          {#if fileStatusMessage}
+            <span class="file-status-message" class:text-primary={!!pendingSource} class:text-red-600={!!error} title={fileStatusMessage}>{fileStatusMessage}</span>
+          {/if}
+          {#if pendingSource}
+            <button type="button" class="toolbar-utility file-status-reload" disabled={sourceRequestBusy || saving || loading} on:click={requestSourceReload} title="Reload source file">
+              <span class="i-tabler-refresh w-3 h-3" aria-hidden="true"></span>
+              {sourceRequestBusy ? 'Reloading…' : 'Reload'}
+            </button>
+          {/if}
+        </div>
       </div>
       <div class="shrink-0 flex items-center gap-3">
         <div class="flex items-center gap-1.5" role="group" aria-label="File actions">
@@ -539,14 +724,6 @@
       onClose={() => (showSettingsPanel = false)}
       onSave={(s) => (settingsSnapshot = s)}
     />
-    {#if error}
-      <p class="shrink-0 py-2 px-6 m-0 bg-red-50 text-red-600 text-sm">
-        {error}
-      </p>
-    {/if}
-    {#if notice || loading}
-      <p class="shrink-0 py-2 px-5 m-0 bg-bg-secondary text-text-secondary text-xs" role="status">{loading ? 'Reading file…' : notice}</p>
-    {/if}
     <div class="flex-1 flex min-h-0 overflow-hidden bg-bg-base">
       <div
         class="flex flex-col h-full shrink-0 border-r border-border-base bg-bg-base overflow-hidden"
@@ -581,7 +758,7 @@
         aria-label="Resize sidebar"
         on:mousedown={resizeHandleMousedown}
       ></div>
-      {#key selectedPath}
+      {#key `${sourceRevision}:${selectedPath}`}
         {#if showRelsGraph}
           <RelsGraph entries={entries} />
         {:else if currentEntry?.previewUrl}
@@ -603,6 +780,8 @@
           />
         {:else}
           <XmlEditor
+            bind:this={xmlEditor}
+            {restoreView}
             path={selectedPath}
             content={editorContent}
             {searchSession}

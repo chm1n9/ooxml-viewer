@@ -43,6 +43,12 @@
 
   export let path: string | null = null;
   export let content: string = '';
+  export let restoreView: { top: number; left: number; anchor: number; head: number } | null = null;
+  export function captureView() {
+    if (!editorView) return null;
+    const { anchor, head } = editorView.state.selection.main;
+    return { top: editorView.scrollDOM.scrollTop, left: editorView.scrollDOM.scrollLeft, anchor, head };
+  }
   export let baselineContent: string = '';
   export let searchSession: EditorSearchSession = createEditorSearchSession();
   let editedContent = content;
@@ -383,6 +389,16 @@
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected && previousFocus !== document.body) {
         previousFocus.focus({ preventScroll: true });
       }
+    }
+    if (restoreView) {
+      const restored = restoreView;
+      const view = editorView;
+      requestAnimationFrame(() => {
+        if (editorView !== view) return;
+        view.dispatch({ selection: { anchor: Math.min(restored.anchor, view.state.doc.length), head: Math.min(restored.head, view.state.doc.length) } });
+        view.scrollDOM.scrollTop = restored.top;
+        view.scrollDOM.scrollLeft = restored.left;
+      });
     }
     editedContent = initialContent;
     scheduleValidation(initialContent);
